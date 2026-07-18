@@ -29,6 +29,9 @@ let gameOver = false;
 let chainCount = 0;
 let totalCleared = 0;
 let score = 0;
+let level = 1;
+let clearedThisLevel = 0;
+const CLEAR_PER_LEVEL = 100; // レベルごとにリセットして100個消去でレベルアップ
 
 // 回転の壁蹴り失敗状態(同じキーを連続で押すと上下シフトになる仕様)
 let rotationFailedDir = null; // 'cw' | 'ccw' | null
@@ -37,15 +40,18 @@ let rotationFailedDir = null; // 'cw' | 'ccw' | null
 // DOM初期化
 // ----------------------------------------------------------
 const boardEl = document.getElementById('board');
+const gridCellsEl = document.getElementById('grid-cells');
 const nextBoxes = [document.getElementById('next1'), document.getElementById('next2')];
 const chainToastEl = document.getElementById('chain-toast');
 const scoreEl = document.getElementById('score-value');
+const levelEl = document.getElementById('level-value');
 const gameoverEl = document.getElementById('gameover');
 const retryBtn = document.getElementById('retry-btn');
+const titleBtn = document.getElementById('title-btn');
 
 const cellEls = []; // cellEls[row][col]
 function buildBoardDom() {
-  boardEl.innerHTML = '';
+  gridCellsEl.innerHTML = '';
   for (let r = ROWS - 1; r >= 0; r--) {
     cellEls[r] = cellEls[r] || [];
     for (let c = 0; c < COLS; c++) {
@@ -53,7 +59,7 @@ function buildBoardDom() {
       div.className = 'cell';
       div.style.gridRowStart = (ROWS - r);
       div.style.gridColumnStart = (c + 1);
-      boardEl.appendChild(div);
+      gridCellsEl.appendChild(div);
       cellEls[r][c] = div;
     }
   }
@@ -256,6 +262,7 @@ function lockPiece() {
   grid[current.axisRow][current.axisCol] = current.axisColor;
   grid[current.subRow][current.subCol] = current.subColor;
   current = null;
+  applyGravity(); // 片方の下に隙間がある場合、そのブロックだけ落下させる
   render();
   resolveBoard().then(() => {
     if (!gameOver) {
@@ -338,6 +345,13 @@ function resolveBoard() {
       score += totalCells * 10 * chainCount;
       scoreEl.textContent = score;
 
+      clearedThisLevel += totalCells;
+      while (clearedThisLevel >= CLEAR_PER_LEVEL) {
+        clearedThisLevel -= CLEAR_PER_LEVEL;
+        level += 1;
+        levelEl.textContent = level;
+      }
+
       showChainToast(chainCount);
 
       setTimeout(() => {
@@ -381,14 +395,20 @@ function resetGame() {
   score = 0;
   totalCleared = 0;
   chainCount = 0;
+  level = 1;
+  clearedThisLevel = 0;
   gameOver = false;
   gameoverEl.classList.remove('show');
   scoreEl.textContent = '0';
+  levelEl.textContent = '1';
   current = spawnPiece();
   render();
 }
 
 retryBtn.addEventListener('click', resetGame);
+titleBtn.addEventListener('click', () => {
+  window.location.href = 'index.html';
+});
 
 // ----------------------------------------------------------
 // 描画

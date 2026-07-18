@@ -18,10 +18,12 @@
 
   <div class="panel">
     <div class="board" id="board">
+      <div class="grid-cells" id="grid-cells"></div>
       <div class="chain-toast" id="chain-toast"></div>
       <div class="gameover-overlay" id="gameover">
         <h2>GAME OVER</h2>
         <button class="retry-btn" id="retry-btn">もう一度</button>
+        <button class="retry-btn" id="title-btn">タイトルへ戻る</button>
       </div>
     </div>
     <div class="controls-hint">
@@ -33,6 +35,10 @@
     <div class="stat">
       <div class="label">SCORE</div>
       <div class="value" id="score-value">0</div>
+    </div>
+    <div class="stat" style="margin-top:10px;">
+      <div class="label">LEVEL</div>
+      <div class="value" id="level-value">1</div>
     </div>
   </div>
 </div>
