@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>くまっちパズル - プレイ</title>
+<link rel="stylesheet" href="src/css/game.css">
+</head>
+<body>
+<a class="back-link" href="index.html">← タイトルへ</a>
+
+<div class="wrap">
+  <div class="side panel">
+    <h2>NEXT</h2>
+    <div class="next-box" id="next1"></div>
+    <div class="next-box" id="next2"></div>
+  </div>
+
+  <div class="panel">
+    <div class="board" id="board">
+      <div class="chain-toast" id="chain-toast"></div>
+      <div class="gameover-overlay" id="gameover">
+        <h2>GAME OVER</h2>
+        <button class="retry-btn" id="retry-btn">もう一度</button>
+      </div>
+    </div>
+    <div class="controls-hint">
+      ← → 移動　　Z / X 回転　　↓ 高速落下
+    </div>
+  </div>
+
+  <div class="side panel">
+    <div class="stat">
+      <div class="label">SCORE</div>
+      <div class="value" id="score-value">0</div>
+    </div>
+  </div>
+</div>
+
+<script src="src/js/game.js"></script>
+</body>
+</html>

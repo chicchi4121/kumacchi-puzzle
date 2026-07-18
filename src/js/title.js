@@ -22,10 +22,7 @@
   }
 })();
 
-// スタートボタン: 今後ここでゲーム画面(game.html等)への遷移処理を実装する
+// スタートボタン: ゲーム画面へ遷移
 document.getElementById('start-btn').addEventListener('click', () => {
-  const hint = document.getElementById('hint');
-  hint.textContent = 'ゲームスタート処理はこれから実装します';
-  // TODO: Phase1実装後、ここでゲーム画面に遷移する
-  // window.location.href = 'game.html';
+  window.location.href = 'game.html';
 });
