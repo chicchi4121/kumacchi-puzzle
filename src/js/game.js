@@ -6,11 +6,42 @@
 const COLS = 6;
 const ROWS = 12;      // 表示される段数
 const SPAWN_ROW = ROWS; // 13段目(非表示スポーン位置)。row index 0=最下段, 12=非表示
-const COLORS = ['red', 'blue', 'yellow', 'green']; // Phase1は4色固定
+const COLORS = ['red', 'blue', 'yellow', 'green', 'purple', 'white']; // レベルに応じて解放
 
-const FALL_INTERVAL_NORMAL = 800; // ms
+const FALL_INTERVAL_BASE = 800; // ms (Lv1-5)
+const FALL_INTERVAL_MIN = 100;  // ms (Lv50到達時の最高速度)
 const FALL_INTERVAL_SOFT = 45;    // ms (ソフトドロップ中)
 const LOCK_DELAY = 350;           // ms (着地してから固定するまでの猶予)
+
+// レベルに応じた自然落下の間隔(ms)を計算する。
+// Lv1-5: 固定速度 / Lv6-50: 徐々に速く(線形補間) / Lv51-99: 最高速度維持
+// Lv10以降はさらに1.2倍速くなる(間隔を1.2で割る)
+function getFallInterval(lv) {
+  const clampedLv = Math.min(Math.max(lv, 1), 50);
+  let interval;
+  if (clampedLv <= 5) {
+    interval = FALL_INTERVAL_BASE;
+  } else {
+    const ratio = (clampedLv - 5) / (50 - 5);
+    interval = FALL_INTERVAL_BASE - (FALL_INTERVAL_BASE - FALL_INTERVAL_MIN) * ratio;
+  }
+  if (lv >= 10) {
+    interval = interval / 1.2;
+  }
+  return Math.max(interval, 30); // 極端に速くなりすぎないよう下限を設ける
+}
+
+// レベルごとの解放色 (Lv1-9:4色 / Lv10-19:5色(紫) / Lv20-99:6色(白))
+function colorsForLevel(lv) {
+  if (lv >= 20) return COLORS; // 赤青黄緑紫白
+  if (lv >= 10) return COLORS.slice(0, 5); // 紫まで
+  return COLORS.slice(0, 4); // 赤青黄緑
+}
+
+// レベルアップに必要な消去数: Lv1→2は50個、以降1レベルごとに1.1倍
+function getRequiredClears(lv) {
+  return Math.round(50 * Math.pow(1.1, lv - 1));
+}
 
 // grid[row][col] = null または色文字列。row 0が最下段。
 let grid = [];
@@ -31,7 +62,6 @@ let totalCleared = 0;
 let score = 0;
 let level = 1;
 let clearedThisLevel = 0;
-const CLEAR_PER_LEVEL = 100; // レベルごとにリセットして100個消去でレベルアップ
 
 // 回転の壁蹴り失敗状態(同じキーを連続で押すと上下シフトになる仕様)
 let rotationFailedDir = null; // 'cw' | 'ccw' | null
@@ -43,6 +73,7 @@ const boardEl = document.getElementById('board');
 const gridCellsEl = document.getElementById('grid-cells');
 const nextBoxes = [document.getElementById('next1'), document.getElementById('next2')];
 const chainToastEl = document.getElementById('chain-toast');
+const zenkeshiToastEl = document.getElementById('zenkeshi-toast');
 const scoreEl = document.getElementById('score-value');
 const levelEl = document.getElementById('level-value');
 const gameoverEl = document.getElementById('gameover');
@@ -67,7 +98,8 @@ function buildBoardDom() {
 buildBoardDom();
 
 function randomColor() {
-  return COLORS[Math.floor(Math.random() * COLORS.length)];
+  const pool = colorsForLevel(level);
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 function fillQueue() {
@@ -279,28 +311,45 @@ function findGroups() {
   const visited = Array.from({ length: SPAWN_ROW }, () => new Array(COLS).fill(false));
   const groups = [];
 
-  for (let r = 0; r < SPAWN_ROW; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const color = grid[r][c];
-      if (!color || color === 'gray' || visited[r][c]) continue;
+  function matches(cellColor, groupColor) {
+    // 白はジョーカー: どの色ともつながる(白同士のグループの場合は白のみ)
+    return cellColor === groupColor || cellColor === 'white';
+  }
 
-      // 幅優先探索で連結成分を取得(上下左右のみ)
-      const stack = [[r, c]];
-      visited[r][c] = true;
-      const group = [];
-      while (stack.length) {
-        const [cr, cc] = stack.pop();
-        group.push([cr, cc]);
-        const neighbors = [[cr + 1, cc], [cr - 1, cc], [cr, cc + 1], [cr, cc - 1]];
-        for (const [nr, nc] of neighbors) {
-          if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) continue;
-          if (visited[nr][nc]) continue;
-          if (grid[nr][nc] === color) {
-            visited[nr][nc] = true;
-            stack.push([nr, nc]);
-          }
+  function bfsFrom(r, c, seedColor) {
+    const stack = [[r, c]];
+    visited[r][c] = true;
+    const group = [];
+    while (stack.length) {
+      const [cr, cc] = stack.pop();
+      group.push([cr, cc]);
+      const neighbors = [[cr + 1, cc], [cr - 1, cc], [cr, cc + 1], [cr, cc - 1]];
+      for (const [nr, nc] of neighbors) {
+        if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) continue;
+        if (visited[nr][nc]) continue;
+        if (matches(grid[nr][nc], seedColor)) {
+          visited[nr][nc] = true;
+          stack.push([nr, nc]);
         }
       }
+    }
+    return group;
+  }
+
+  // パス1: 実色セルを優先してシードにする(白は経由してつながる)
+  for (let r = 0; r < SPAWN_ROW; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const seedColor = grid[r][c];
+      if (!seedColor || seedColor === 'gray' || seedColor === 'white' || visited[r][c]) continue;
+      const group = bfsFrom(r, c, seedColor);
+      if (group.length >= 4) groups.push(group);
+    }
+  }
+  // パス2: どの色にも隣接しなかった白セルだけのクラスタを判定
+  for (let r = 0; r < SPAWN_ROW; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (grid[r][c] !== 'white' || visited[r][c]) continue;
+      const group = bfsFrom(r, c, 'white');
       if (group.length >= 4) groups.push(group);
     }
   }
@@ -331,11 +380,29 @@ function resolveBoard() {
         resolve();
         return;
       }
+
+      // 白ブロックは「上に乗っているブロックがある」場合のみ実際に消える。
+      // 支えがない白セルはグループに含まれていても盤面に残す。
+      const cellsToClear = [];
+      groups.forEach(g => {
+        g.forEach(([r, c]) => {
+          if (grid[r][c] === 'white') {
+            const hasBlockOnTop = r + 1 < SPAWN_ROW && grid[r + 1][c] !== null;
+            if (!hasBlockOnTop) return; // 白は残す
+          }
+          cellsToClear.push([r, c]);
+        });
+      });
+
+      if (cellsToClear.length === 0) {
+        // 消せるセルが1つもなければこれ以上は連鎖しない
+        render();
+        resolve();
+        return;
+      }
+
       chainCount += 1;
 
-      // 消去アニメーション用にマーク
-      const cellsToClear = [];
-      groups.forEach(g => g.forEach(([r, c]) => cellsToClear.push([r, c])));
       cellsToClear.forEach(([r, c]) => {
         if (r < ROWS) cellEls[r][c].classList.add('clearing');
       });
@@ -343,11 +410,14 @@ function resolveBoard() {
       const totalCells = cellsToClear.length;
       totalCleared += totalCells;
       score += totalCells * 10 * chainCount;
+      if (chainCount >= 6) {
+        score += 3000; // 6連鎖以降のボーナス
+      }
       scoreEl.textContent = score;
 
       clearedThisLevel += totalCells;
-      while (clearedThisLevel >= CLEAR_PER_LEVEL) {
-        clearedThisLevel -= CLEAR_PER_LEVEL;
+      while (clearedThisLevel >= getRequiredClears(level)) {
+        clearedThisLevel -= getRequiredClears(level);
         level += 1;
         levelEl.textContent = level;
       }
@@ -359,6 +429,15 @@ function resolveBoard() {
           grid[r][c] = null;
         });
         applyGravity();
+
+        // 全消し判定(盤面に何も残っていない場合)
+        const isAllClear = grid.slice(0, SPAWN_ROW).every(row => row.every(cell => cell === null));
+        if (isAllClear) {
+          score += 5000;
+          scoreEl.textContent = score;
+          showZenkeshiEffect();
+        }
+
         render();
         cellsToClear.forEach(([r, c]) => {
           if (r < ROWS) cellEls[r][c].classList.remove('clearing');
@@ -377,6 +456,12 @@ function showChainToast(n) {
   chainToastEl.classList.remove('show');
   void chainToastEl.offsetWidth; // reflow でアニメーション再トリガー
   chainToastEl.classList.add('show');
+}
+
+function showZenkeshiEffect() {
+  zenkeshiToastEl.classList.remove('show');
+  void zenkeshiToastEl.offsetWidth; // reflow でアニメーション再トリガー
+  zenkeshiToastEl.classList.add('show');
 }
 
 // ----------------------------------------------------------
@@ -411,26 +496,54 @@ titleBtn.addEventListener('click', () => {
 });
 
 // ----------------------------------------------------------
+// くまの顔ブロック画像 (背景を透過処理したPNG画像を使用し、
+// 立体感のある3Dブロック風グラデーションの上に重ねて表示する)
+// ----------------------------------------------------------
+const BLOCK_IMAGE_PATHS = {
+  red: 'assets/images/blocks/red.png',
+  blue: 'assets/images/blocks/blue.png',
+  yellow: 'assets/images/blocks/yellow.png',
+  green: 'assets/images/blocks/green.png',
+  purple: 'assets/images/blocks/purple.png',
+  white: 'assets/images/blocks/white.png',
+};
+
+function applyBlockFace(el, color) {
+  if (!color) {
+    el.className = 'cell';
+    el.style.backgroundImage = '';
+    return;
+  }
+  if (color === 'gray') {
+    // おじゃまブロックは顔なしの無地(Phase3で実装)
+    el.className = 'cell filled gray';
+    el.style.backgroundImage = '';
+    return;
+  }
+  el.className = 'cell filled cube';
+  el.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
+  el.style.backgroundSize = '100% 100%';
+  el.style.backgroundPosition = 'center';
+  el.style.backgroundRepeat = 'no-repeat';
+}
+
+// ----------------------------------------------------------
 // 描画
 // ----------------------------------------------------------
 function render() {
   // 盤面(固定済みブロック)
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      const el = cellEls[r][c];
-      const color = grid[r][c];
-      el.className = 'cell' + (color ? ` filled ${color}` : '');
+      applyBlockFace(cellEls[r][c], grid[r][c]);
     }
   }
   // 落下中ピースを上書き描画
   if (current) {
     if (current.axisRow < ROWS) {
-      const el = cellEls[current.axisRow][current.axisCol];
-      el.className = `cell filled ${current.axisColor}`;
+      applyBlockFace(cellEls[current.axisRow][current.axisCol], current.axisColor);
     }
     if (current.subRow < ROWS) {
-      const el = cellEls[current.subRow][current.subCol];
-      el.className = `cell filled ${current.subColor}`;
+      applyBlockFace(cellEls[current.subRow][current.subCol], current.subColor);
     }
   }
   // ネクスト表示
@@ -439,7 +552,11 @@ function render() {
     box.innerHTML = '';
     [p.axisColor, p.subColor].forEach(color => {
       const d = document.createElement('div');
-      d.className = `next-cell ${color}`;
+      d.className = 'next-cell cube';
+      d.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
+      d.style.backgroundSize = '100% 100%';
+      d.style.backgroundPosition = 'center';
+      d.style.backgroundRepeat = 'no-repeat';
       box.appendChild(d);
     });
   });
@@ -485,7 +602,7 @@ function loop(time) {
 
   if (!gameOver && current) {
     fallTimer += dt;
-    const interval = softDropping ? FALL_INTERVAL_SOFT : FALL_INTERVAL_NORMAL;
+    const interval = softDropping ? FALL_INTERVAL_SOFT : getFallInterval(level);
     if (fallTimer >= interval) {
       fallTimer = 0;
       stepFall();

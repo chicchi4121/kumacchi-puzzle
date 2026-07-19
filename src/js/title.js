@@ -26,3 +26,8 @@
 document.getElementById('start-btn').addEventListener('click', () => {
   window.location.href = 'game.html';
 });
+
+// AI対戦ボタン: AI対戦モードへ遷移
+document.getElementById('battle-btn').addEventListener('click', () => {
+  window.location.href = 'battle.html';
+});

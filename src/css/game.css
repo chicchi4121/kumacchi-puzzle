@@ -65,8 +65,10 @@ html,body{
   padding:8px;
 }
 .next-cell{
-  width:28px; height:28px; border-radius:7px;
-  box-shadow: inset 0 -3px 0 rgba(0,0,0,0.2), inset 0 3px 0 rgba(255,255,255,0.25);
+  width:28px; height:28px;
+}
+.next-cell.cube{
+  filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4));
 }
 
 .stat{
@@ -107,10 +109,11 @@ html,body{
 .cell.filled{
   box-shadow: inset 0 -5px 0 rgba(0,0,0,0.2), inset 0 5px 0 rgba(255,255,255,0.28);
 }
-.cell.red, .next-cell.red{ background: var(--red); }
-.cell.blue, .next-cell.blue{ background: var(--blue); }
-.cell.yellow, .next-cell.yellow{ background: var(--yellow); }
-.cell.green, .next-cell.green{ background: var(--green); }
+.cell.filled.cube{
+  box-shadow: none;
+  border-color: transparent;
+  filter: drop-shadow(0 3px 3px rgba(0,0,0,0.4));
+}
 .cell.gray, .next-cell.gray{ background: var(--gray); }
 .cell.clearing{
   animation: clear-flash 0.28s ease-out;
@@ -142,6 +145,33 @@ html,body{
   30%{ opacity:1; transform: translate(-50%,-50%) scale(1.15) rotate(3deg); }
   70%{ opacity:1; transform: translate(-50%,-50%) scale(1) rotate(0deg); }
   100%{ opacity:0; transform: translate(-50%,-50%) scale(0.9) rotate(0deg); }
+}
+
+.zenkeshi-toast{
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  font-family:'Baloo 2', sans-serif;
+  font-size:1.7rem;
+  color: var(--honey);
+  -webkit-text-stroke: 2px var(--choco-deep);
+  paint-order: stroke fill;
+  opacity:0;
+  pointer-events:none;
+  z-index:6;
+  white-space:nowrap;
+  text-align:center;
+}
+.zenkeshi-toast.show{
+  animation: zenkeshi-pop 1.1s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes zenkeshi-pop{
+  0%{ opacity:0; transform: translate(-50%,-50%) scale(0.3) rotate(-10deg); }
+  25%{ opacity:1; transform: translate(-50%,-50%) scale(1.25) rotate(4deg); }
+  45%{ transform: translate(-50%,-50%) scale(1) rotate(-2deg); }
+  85%{ opacity:1; transform: translate(-50%,-50%) scale(1.05) rotate(0deg); }
+  100%{ opacity:0; transform: translate(-50%,-50%) scale(0.95) rotate(0deg); }
 }
 
 .gameover-overlay{

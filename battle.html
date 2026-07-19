@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>くまっちパズル - AI対戦</title>
+<link rel="stylesheet" href="src/css/battle.css">
+</head>
+<body>
+<a class="back-link" href="index.html">← タイトルへ</a>
+
+<div class="setup-overlay" id="setup-overlay">
+  <h1>AI対戦 - 難易度を選んでね</h1>
+  <div class="diff-grid">
+    <button class="diff-btn easy" data-diff="easy">EASY<span class="sub">初心者向け・たまにミスする</span></button>
+    <button class="diff-btn normal" data-diff="normal">NORMAL<span class="sub">基本戦略で2〜4連鎖狙い</span></button>
+    <button class="diff-btn hard" data-diff="hard">HARD<span class="sub">穴を作らず先を読む</span></button>
+    <button class="diff-btn master" data-diff="master">MASTER<span class="sub">常に最適解・上級者級</span></button>
+  </div>
+</div>
+
+<div class="arena">
+  <div class="side-panel">
+    <div class="player-label">YOU</div>
+    <div class="play-area">
+      <div class="board" id="board-player">
+        <div class="grid-cells" id="grid-cells-player"></div>
+        <div class="chain-toast" id="chain-toast-player"></div>
+      </div>
+      <div class="mini-panel">
+        <div class="mini-box"><div class="label">SCORE</div><div class="value" id="score-player">0</div></div>
+        <div class="mini-box"><div class="label">LEVEL</div><div class="value" id="level-player">1</div></div>
+        <div class="next-mini" id="next-player"></div>
+        <div class="garbage-gauge"><div class="label">くる</div><div class="value" id="garbage-player">0</div></div>
+      </div>
+    </div>
+    <div class="controls-hint">← → 移動　Z / X 回転　↓ 高速落下</div>
+  </div>
+
+  <div class="side-panel">
+    <div class="player-label" id="ai-label">AI</div>
+    <div class="play-area">
+      <div class="mini-panel">
+        <div class="mini-box"><div class="label">SCORE</div><div class="value" id="score-ai">0</div></div>
+        <div class="mini-box"><div class="label">LEVEL</div><div class="value" id="level-ai">1</div></div>
+        <div class="next-mini" id="next-ai"></div>
+        <div class="garbage-gauge"><div class="label">くる</div><div class="value" id="garbage-ai">0</div></div>
+      </div>
+      <div class="board" id="board-ai">
+        <div class="grid-cells" id="grid-cells-ai"></div>
+        <div class="chain-toast" id="chain-toast-ai"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="result-overlay" id="result-overlay">
+  <h2 id="result-title">WIN!</h2>
+  <button class="result-btn" id="result-retry">もう一度</button>
+  <button class="result-btn" id="result-title-btn">タイトルへ戻る</button>
+</div>
+
+<script src="src/js/battle.js"></script>
+</body>
+</html>

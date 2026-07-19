@@ -1,0 +1,676 @@
+// ==========================================================
+// くまっちパズル AI対戦モード
+// プレイヤー側とAI側、それぞれ独立した盤面を同じルールで動かし、
+// 連鎖に応じておじゃまブロックを相手に送り合う。
+// ==========================================================
+
+const COLS = 6;
+const ROWS = 12;
+const SPAWN_ROW = ROWS; // 13段目(非表示)
+
+const COLORS = ['red', 'blue', 'yellow', 'green', 'purple', 'white'];
+
+const BLOCK_IMAGE_PATHS = {
+  red: 'assets/images/blocks/red.png',
+  blue: 'assets/images/blocks/blue.png',
+  yellow: 'assets/images/blocks/yellow.png',
+  green: 'assets/images/blocks/green.png',
+  purple: 'assets/images/blocks/purple.png',
+  white: 'assets/images/blocks/white.png',
+};
+
+const FALL_INTERVAL_BASE = 800;
+const FALL_INTERVAL_MIN = 100;
+const FALL_INTERVAL_SOFT = 45;
+const LOCK_DELAY = 350;
+const AI_MOVE_STEP_MS = 130; // AIが1マス動くのにかける時間(見た目のため)
+const GARBAGE_DROP_CAP = 30; // 1回の着地でまとめて落とす最大おじゃま数
+
+function colorsForLevel(lv) {
+  if (lv >= 20) return COLORS;
+  if (lv >= 10) return COLORS.slice(0, 5);
+  return COLORS.slice(0, 4);
+}
+function getRequiredClears(lv) {
+  return Math.round(50 * Math.pow(1.1, lv - 1));
+}
+function getFallInterval(lv) {
+  const clampedLv = Math.min(Math.max(lv, 1), 50);
+  let interval;
+  if (clampedLv <= 5) interval = FALL_INTERVAL_BASE;
+  else {
+    const ratio = (clampedLv - 5) / (50 - 5);
+    interval = FALL_INTERVAL_BASE - (FALL_INTERVAL_BASE - FALL_INTERVAL_MIN) * ratio;
+  }
+  if (lv >= 10) interval = interval / 1.2;
+  return Math.max(interval, 30);
+}
+function getGarbageSendAmount(chain) {
+  const table = [0, 0, 2, 6, 12, 20, 30, 42, 56, 72, 90];
+  if (chain <= 10) return table[chain] || 0;
+  return 90 + (chain - 10) * 18;
+}
+function getSimultaneousBonus(groupCount) {
+  if (groupCount >= 5) return 12;
+  if (groupCount === 4) return 8;
+  if (groupCount === 3) return 5;
+  if (groupCount === 2) return 2;
+  return 0;
+}
+
+// ----------------------------------------------------------
+// 純粋な盤面操作関数 (grid引数を取り、実盤面にもAIのシミュレーションにも使う)
+// ----------------------------------------------------------
+function makeEmptyGrid() {
+  const g = [];
+  for (let r = 0; r <= SPAWN_ROW; r++) g.push(new Array(COLS).fill(null));
+  return g;
+}
+function cloneGrid(grid) { return grid.map(row => row.slice()); }
+
+function offsetFor(orientation) {
+  switch (orientation) {
+    case 0: return { dr: -1, dc: 0 };
+    case 1: return { dr: 0, dc: 1 };
+    case 2: return { dr: 1, dc: 0 };
+    case 3: return { dr: 0, dc: -1 };
+  }
+}
+function cellOccupied(grid, row, col) {
+  if (col < 0 || col >= COLS || row < 0 || row > SPAWN_ROW) return true;
+  return grid[row][col] !== null && grid[row][col] !== undefined;
+}
+function canPlace(grid, axisRow, axisCol, orientation) {
+  const off = offsetFor(orientation);
+  const subRow = axisRow + off.dr;
+  const subCol = axisCol + off.dc;
+  if (axisCol < 0 || axisCol >= COLS || subCol < 0 || subCol >= COLS) return false;
+  if (axisRow < 0 || subRow < 0) return false;
+  if (axisRow > SPAWN_ROW || subRow > SPAWN_ROW) return false;
+  if (cellOccupied(grid, axisRow, axisCol)) return false;
+  if (cellOccupied(grid, subRow, subCol)) return false;
+  return true;
+}
+function findGroups(grid) {
+  const visited = Array.from({ length: SPAWN_ROW }, () => new Array(COLS).fill(false));
+  const groups = [];
+  function matches(cellColor, groupColor) {
+    return cellColor === groupColor || cellColor === 'white';
+  }
+  function bfsFrom(r, c, seedColor) {
+    const stack = [[r, c]]; visited[r][c] = true; const group = [];
+    while (stack.length) {
+      const [cr, cc] = stack.pop(); group.push([cr, cc]);
+      const neighbors = [[cr + 1, cc], [cr - 1, cc], [cr, cc + 1], [cr, cc - 1]];
+      for (const [nr, nc] of neighbors) {
+        if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) continue;
+        if (visited[nr][nc]) continue;
+        if (matches(grid[nr][nc], seedColor)) { visited[nr][nc] = true; stack.push([nr, nc]); }
+      }
+    }
+    return group;
+  }
+  for (let r = 0; r < SPAWN_ROW; r++) for (let c = 0; c < COLS; c++) {
+    const seedColor = grid[r][c];
+    if (!seedColor || seedColor === 'gray' || seedColor === 'white' || visited[r][c]) continue;
+    const group = bfsFrom(r, c, seedColor);
+    if (group.length >= 4) groups.push(group);
+  }
+  for (let r = 0; r < SPAWN_ROW; r++) for (let c = 0; c < COLS; c++) {
+    if (grid[r][c] !== 'white' || visited[r][c]) continue;
+    const group = bfsFrom(r, c, 'white');
+    if (group.length >= 4) groups.push(group);
+  }
+  return groups;
+}
+function applyGravity(grid) {
+  for (let c = 0; c < COLS; c++) {
+    const stack = [];
+    for (let r = 0; r < SPAWN_ROW; r++) if (grid[r][c] !== null) stack.push(grid[r][c]);
+    for (let r = 0; r < SPAWN_ROW; r++) grid[r][c] = r < stack.length ? stack[r] : null;
+  }
+}
+function columnHeights(grid) {
+  const heights = [];
+  for (let c = 0; c < COLS; c++) {
+    let h = 0;
+    for (let r = SPAWN_ROW - 1; r >= 0; r--) { if (grid[r][c] !== null) { h = r + 1; break; } }
+    heights.push(h);
+  }
+  return heights;
+}
+function countHoles(grid, heights) {
+  let holes = 0;
+  for (let c = 0; c < COLS; c++) {
+    for (let r = 0; r < heights[c]; r++) if (grid[r][c] === null) holes++;
+  }
+  return holes;
+}
+
+// ----------------------------------------------------------
+// AIのシミュレーション用: 消去→重力を全て解決した結果を同期的に計算
+// ----------------------------------------------------------
+function simulateResolve(grid) {
+  let chainCount = 0, totalCleared = 0, whiteUsed = false, firstGroupCount = 0;
+  while (true) {
+    const groups = findGroups(grid);
+    if (groups.length === 0) break;
+    const cellsToClear = [];
+    groups.forEach(g => g.forEach(([r, c]) => {
+      if (grid[r][c] === 'white') {
+        const hasTop = r + 1 < SPAWN_ROW && grid[r + 1][c] !== null;
+        if (!hasTop) return;
+      }
+      cellsToClear.push([r, c]);
+    }));
+    if (cellsToClear.length === 0) break;
+    chainCount += 1;
+    if (chainCount === 1) firstGroupCount = groups.length;
+    if (cellsToClear.some(([r, c]) => grid[r][c] === 'white')) whiteUsed = true;
+    totalCleared += cellsToClear.length;
+    cellsToClear.forEach(([r, c]) => { grid[r][c] = null; });
+    applyGravity(grid);
+  }
+  const allClear = grid.slice(0, SPAWN_ROW).every(row => row.every(cell => cell === null));
+  return { chainCount, totalCleared, whiteUsed, allClear, firstGroupCount };
+}
+function findRestingRow(grid, axisCol, orientation) {
+  if (!canPlace(grid, SPAWN_ROW, axisCol, orientation)) return null;
+  let row = SPAWN_ROW;
+  while (canPlace(grid, row - 1, axisCol, orientation)) row--;
+  return row;
+}
+function simulatePlacement(grid, axisColor, subColor, axisCol, orientation) {
+  const restRow = findRestingRow(grid, axisCol, orientation);
+  if (restRow === null) return null;
+  const g2 = cloneGrid(grid);
+  const off = offsetFor(orientation);
+  g2[restRow][axisCol] = axisColor;
+  g2[restRow + off.dr][axisCol + off.dc] = subColor;
+  const res = simulateResolve(g2);
+  const heights = columnHeights(g2);
+  const holes = countHoles(g2, heights);
+  return { ...res, grid: g2, maxHeight: Math.max(...heights), holes };
+}
+function scoreCandidate(sim, difficulty) {
+  let holePenalty = 18, heightPenalty = 3, chainWeight = 550;
+  if (difficulty === 'easy') { holePenalty = 10; heightPenalty = 2; chainWeight = 400; }
+  else if (difficulty === 'hard') { holePenalty = 35; heightPenalty = 5; chainWeight = 650; }
+  else if (difficulty === 'master') { holePenalty = 40; heightPenalty = 6; chainWeight = 700; }
+  let score = sim.chainCount * chainWeight + sim.totalCleared * 8;
+  if (sim.allClear) score += 3000;
+  score -= sim.holes * holePenalty;
+  score -= sim.maxHeight * heightPenalty;
+  return score;
+}
+function decideMove(side) {
+  const candidates = [];
+  for (let col = 0; col < COLS; col++) {
+    for (let orientation = 0; orientation < 4; orientation++) {
+      const sim = simulatePlacement(side.grid, side.current.axisColor, side.current.subColor, col, orientation);
+      if (!sim) continue;
+      let score = scoreCandidate(sim, side.difficulty);
+      if (side.difficulty === 'hard' || side.difficulty === 'master') {
+        const nextPiece = side.queue[0];
+        let bestNext = -Infinity;
+        if (nextPiece) {
+          for (let c2 = 0; c2 < COLS; c2++) for (let o2 = 0; o2 < 4; o2++) {
+            const sim2 = simulatePlacement(sim.grid, nextPiece.axisColor, nextPiece.subColor, c2, o2);
+            if (sim2) {
+              const s2 = scoreCandidate(sim2, side.difficulty);
+              if (s2 > bestNext) bestNext = s2;
+            }
+          }
+        }
+        if (bestNext > -Infinity) score += bestNext * 0.5;
+      }
+      candidates.push({ col, orientation, score });
+    }
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score);
+
+  if (side.difficulty === 'easy') {
+    const r = Math.random();
+    if (r < 0.70) return candidates[0];
+    if (r < 0.90) return candidates[1] || candidates[0];
+    const rest = candidates.slice(2);
+    if (rest.length > 0) return rest[Math.floor(Math.random() * rest.length)];
+    return candidates[candidates.length - 1];
+  }
+  return candidates[0];
+}
+
+// ----------------------------------------------------------
+// DOM構築
+// ----------------------------------------------------------
+function buildBoardDom(gridCellsEl) {
+  const cellEls = [];
+  for (let r = ROWS - 1; r >= 0; r--) {
+    cellEls[r] = cellEls[r] || [];
+    for (let c = 0; c < COLS; c++) {
+      const div = document.createElement('div');
+      div.className = 'cell';
+      div.style.gridRowStart = (ROWS - r);
+      div.style.gridColumnStart = (c + 1);
+      gridCellsEl.appendChild(div);
+      cellEls[r][c] = div;
+    }
+  }
+  return cellEls;
+}
+
+function applyBlockFace(el, color) {
+  if (!color) { el.className = 'cell'; el.style.backgroundImage = ''; return; }
+  if (color === 'gray') { el.className = 'cell filled gray'; el.style.backgroundImage = ''; return; }
+  el.className = 'cell filled cube';
+  el.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
+  el.style.backgroundSize = '100% 100%';
+  el.style.backgroundPosition = 'center';
+  el.style.backgroundRepeat = 'no-repeat';
+}
+
+// ----------------------------------------------------------
+// サイド(プレイヤー/AI)の生成
+// ----------------------------------------------------------
+function createSide(id, isAI, difficulty) {
+  return {
+    id,
+    isAI,
+    difficulty,
+    grid: makeEmptyGrid(),
+    queue: [],
+    current: null,
+    fallTimer: 0,
+    softDropping: false,
+    lockTimer: null,
+    isLocking: false,
+    gameOver: false,
+    level: 1,
+    clearedThisLevel: 0,
+    score: 0,
+    chainCount: 0,
+    incoming: 0,
+    aiPlan: null,
+    rotationFailedDir: null,
+    cellEls: buildBoardDom(document.getElementById(`grid-cells-${id}`)),
+    nextBoxEl: document.getElementById(`next-${id}`),
+    scoreEl: document.getElementById(`score-${id}`),
+    levelEl: document.getElementById(`level-${id}`),
+    garbageEl: document.getElementById(`garbage-${id}`),
+    chainToastEl: document.getElementById(`chain-toast-${id}`),
+  };
+}
+
+function randomColorFor(side) {
+  const pool = colorsForLevel(side.level);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+function fillQueue(side) {
+  while (side.queue.length < 2) {
+    side.queue.push({ axisColor: randomColorFor(side), subColor: randomColorFor(side) });
+  }
+}
+
+function spawnPiece(side, opponent) {
+  fillQueue(side);
+  const next = side.queue.shift();
+  fillQueue(side);
+  const axisRow = SPAWN_ROW;
+  const axisCol = Math.floor(COLS / 2) - 1;
+  const piece = { axisRow, axisCol, orientation: 0, axisColor: next.axisColor, subColor: next.subColor };
+  const off = offsetFor(piece.orientation);
+  piece.subRow = piece.axisRow + off.dr;
+  piece.subCol = piece.axisCol + off.dc;
+
+  if (cellOccupied(side.grid, piece.axisRow, piece.axisCol) || cellOccupied(side.grid, piece.subRow, piece.subCol)) {
+    endMatch(side, opponent);
+    return null;
+  }
+  side.softDropping = false;
+  return piece;
+}
+
+function planAndQueueAIMove(side) {
+  const best = decideMove(side);
+  if (!best) { side.aiPlan = null; return; }
+  side.current.orientation = best.orientation;
+  const off = offsetFor(best.orientation);
+  side.current.subRow = side.current.axisRow + off.dr;
+  side.current.subCol = side.current.axisCol + off.dc;
+  const dc = best.col - side.current.axisCol;
+  side.aiPlan = { movesLeft: Math.abs(dc), dir: dc === 0 ? 0 : (dc > 0 ? 1 : -1), moveTimer: 0 };
+}
+
+// ----------------------------------------------------------
+// 操作: 移動・回転(壁蹴り: 左1マス→右1マス→上1マス)
+// ----------------------------------------------------------
+function tryMove(side, dc) {
+  if (!side.current || side.gameOver) return;
+  const newAxisCol = side.current.axisCol + dc;
+  if (canPlace(side.grid, side.current.axisRow, newAxisCol, side.current.orientation)) {
+    side.current.axisCol = newAxisCol;
+    const off = offsetFor(side.current.orientation);
+    side.current.subCol = side.current.axisCol + off.dc;
+    resetLockIfFloating(side);
+    renderSide(side);
+  }
+}
+function tryMoveVertical(side, dr) {
+  if (!side.current) return false;
+  const newAxisRow = side.current.axisRow + dr;
+  if (canPlace(side.grid, newAxisRow, side.current.axisCol, side.current.orientation)) {
+    side.current.axisRow = newAxisRow;
+    const off = offsetFor(side.current.orientation);
+    side.current.subRow = side.current.axisRow + off.dr;
+    return true;
+  }
+  return false;
+}
+function tryRotate(side, dir) {
+  if (!side.current || side.gameOver) return;
+  const delta = dir === 'cw' ? 1 : 3;
+  const newOrientation = (side.current.orientation + delta) % 4;
+  const c = side.current;
+
+  if (canPlace(side.grid, c.axisRow, c.axisCol, newOrientation)) { applyRotation(side, newOrientation); side.rotationFailedDir = null; return; }
+  if (canPlace(side.grid, c.axisRow, c.axisCol - 1, newOrientation)) { c.axisCol -= 1; applyRotation(side, newOrientation); side.rotationFailedDir = null; return; }
+  if (canPlace(side.grid, c.axisRow, c.axisCol + 1, newOrientation)) { c.axisCol += 1; applyRotation(side, newOrientation); side.rotationFailedDir = null; return; }
+  if (canPlace(side.grid, c.axisRow + 1, c.axisCol, newOrientation)) { c.axisRow += 1; applyRotation(side, newOrientation); side.rotationFailedDir = null; return; }
+
+  if (side.rotationFailedDir === dir) {
+    if (!tryMoveVertical(side, 1)) tryMoveVertical(side, -1);
+    side.rotationFailedDir = null;
+    renderSide(side);
+    return;
+  }
+  side.rotationFailedDir = dir;
+}
+function applyRotation(side, newOrientation) {
+  side.current.orientation = newOrientation;
+  const off = offsetFor(newOrientation);
+  side.current.subRow = side.current.axisRow + off.dr;
+  side.current.subCol = side.current.axisCol + off.dc;
+  resetLockIfFloating(side);
+  renderSide(side);
+}
+
+// ----------------------------------------------------------
+// 落下 / 固定
+// ----------------------------------------------------------
+function resetLockIfFloating(side) {
+  if (side.isLocking && canFall(side)) { side.isLocking = false; clearTimeout(side.lockTimer); }
+}
+function canFall(side) {
+  if (!side.current) return false;
+  return canPlace(side.grid, side.current.axisRow - 1, side.current.axisCol, side.current.orientation);
+}
+function stepFall(side, opponent) {
+  if (!side.current || side.gameOver) return;
+  if (canFall(side)) {
+    side.current.axisRow -= 1;
+    const off = offsetFor(side.current.orientation);
+    side.current.subRow = side.current.axisRow + off.dr;
+    side.isLocking = false;
+    renderSide(side);
+  } else {
+    startLockSequence(side, opponent);
+  }
+}
+function startLockSequence(side, opponent) {
+  if (side.isLocking) return;
+  side.isLocking = true;
+  side.lockTimer = setTimeout(() => {
+    if (side.current && !canFall(side)) lockPiece(side, opponent);
+    side.isLocking = false;
+  }, LOCK_DELAY);
+}
+function lockPiece(side, opponent) {
+  if (!side.current) return;
+  side.grid[side.current.axisRow][side.current.axisCol] = side.current.axisColor;
+  side.grid[side.current.subRow][side.current.subCol] = side.current.subColor;
+  side.current = null;
+  applyGravity(side.grid);
+  renderSide(side);
+  resolveBoardAnimated(side).then((garbageAmount) => {
+    if (side.gameOver) return;
+    if (garbageAmount > 0) sendGarbage(side, opponent, garbageAmount);
+    dropPendingGarbage(side);
+    renderSide(side);
+    if (side.gameOver) return;
+    side.current = spawnPiece(side, opponent);
+    if (side.current && side.isAI) planAndQueueAIMove(side);
+    renderSide(side);
+  });
+}
+
+// ----------------------------------------------------------
+// 消去判定・連鎖の実行(アニメーション付き)
+// ----------------------------------------------------------
+function resolveBoardAnimated(side) {
+  return new Promise((resolve) => {
+    side.chainCount = 0;
+    let totalGarbage = 0;
+    let whiteUsedAnywhere = false;
+
+    function step() {
+      const groups = findGroups(side.grid);
+      if (groups.length === 0) { renderSide(side); finish(); return; }
+
+      const cellsToClear = [];
+      groups.forEach(g => g.forEach(([r, c]) => {
+        if (side.grid[r][c] === 'white') {
+          const hasTop = r + 1 < SPAWN_ROW && side.grid[r + 1][c] !== null;
+          if (!hasTop) return;
+        }
+        cellsToClear.push([r, c]);
+      }));
+
+      if (cellsToClear.length === 0) { renderSide(side); finish(); return; }
+
+      side.chainCount += 1;
+      cellsToClear.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.add('clearing'); });
+
+      const totalCells = cellsToClear.length;
+      side.score += totalCells * 10 * side.chainCount;
+      if (side.chainCount >= 6) side.score += 3000;
+      side.scoreEl.textContent = side.score;
+
+      if (cellsToClear.some(([r, c]) => side.grid[r][c] === 'white')) whiteUsedAnywhere = true;
+      totalGarbage += getGarbageSendAmount(side.chainCount) + getSimultaneousBonus(groups.length);
+
+      side.clearedThisLevel += totalCells;
+      while (side.clearedThisLevel >= getRequiredClears(side.level)) {
+        side.clearedThisLevel -= getRequiredClears(side.level);
+        side.level += 1;
+        side.levelEl.textContent = side.level;
+      }
+
+      showChainToast(side, side.chainCount);
+
+      setTimeout(() => {
+        cellsToClear.forEach(([r, c]) => { side.grid[r][c] = null; });
+        applyGravity(side.grid);
+
+        const isAllClear = side.grid.slice(0, SPAWN_ROW).every(row => row.every(cell => cell === null));
+        if (isAllClear) { totalGarbage += 30; side.score += 5000; side.scoreEl.textContent = side.score; }
+
+        renderSide(side);
+        cellsToClear.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.remove('clearing'); });
+        step();
+      }, 260);
+    }
+
+    function finish() {
+      if (whiteUsedAnywhere) totalGarbage = Math.round(totalGarbage * 1.1);
+      resolve(totalGarbage);
+    }
+    step();
+  });
+}
+
+function showChainToast(side, n) {
+  if (n < 2) return;
+  side.chainToastEl.textContent = `${n} れんさ!!`;
+  side.chainToastEl.classList.remove('show');
+  void side.chainToastEl.offsetWidth;
+  side.chainToastEl.classList.add('show');
+}
+
+// ----------------------------------------------------------
+// おじゃまブロックの送受信
+// ----------------------------------------------------------
+function sendGarbage(fromSide, toSide, amount) {
+  const cancel = Math.min(amount, fromSide.incoming);
+  fromSide.incoming -= cancel;
+  const remaining = amount - cancel;
+  if (remaining > 0) toSide.incoming += remaining;
+  fromSide.garbageEl.textContent = Math.ceil(fromSide.incoming);
+  toSide.garbageEl.textContent = Math.ceil(toSide.incoming);
+}
+
+function dropPendingGarbage(side) {
+  if (side.incoming <= 0 || side.gameOver) return;
+  const dropCount = Math.min(Math.round(side.incoming), GARBAGE_DROP_CAP);
+  side.incoming -= dropCount;
+  side.garbageEl.textContent = Math.ceil(side.incoming);
+
+  const cols = [0, 1, 2, 3, 4, 5];
+  for (let i = cols.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [cols[i], cols[j]] = [cols[j], cols[i]];
+  }
+  let placed = 0, ci = 0, guard = 0;
+  while (placed < dropCount && guard < dropCount * 40) {
+    guard++;
+    const col = cols[ci % cols.length]; ci++;
+    let row = 0;
+    while (row <= SPAWN_ROW && side.grid[row][col] !== null) row++;
+    if (row > SPAWN_ROW) continue;
+    side.grid[row][col] = 'gray';
+    placed++;
+  }
+}
+
+// ----------------------------------------------------------
+// 描画
+// ----------------------------------------------------------
+function renderSide(side) {
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) applyBlockFace(side.cellEls[r][c], side.grid[r][c]);
+  if (side.current) {
+    if (side.current.axisRow < ROWS) applyBlockFace(side.cellEls[side.current.axisRow][side.current.axisCol], side.current.axisColor);
+    if (side.current.subRow < ROWS) applyBlockFace(side.cellEls[side.current.subRow][side.current.subCol], side.current.subColor);
+  }
+  side.nextBoxEl.innerHTML = '';
+  const next = side.queue[0];
+  if (next) {
+    [next.axisColor, next.subColor].forEach(color => {
+      const d = document.createElement('div');
+      d.className = 'next-mini-cell';
+      d.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
+      d.style.backgroundSize = '100% 100%';
+      d.style.backgroundPosition = 'center';
+      d.style.backgroundRepeat = 'no-repeat';
+      side.nextBoxEl.appendChild(d);
+    });
+  }
+}
+
+// ----------------------------------------------------------
+// 勝敗判定
+// ----------------------------------------------------------
+let matchOver = false;
+function endMatch(losingSide, winningSide) {
+  if (matchOver) return;
+  matchOver = true;
+  losingSide.gameOver = true;
+  winningSide.gameOver = true;
+  const playerWon = losingSide.id === 'ai';
+  const titleEl = document.getElementById('result-title');
+  titleEl.textContent = playerWon ? 'WIN!' : 'LOSE...';
+  titleEl.className = playerWon ? 'win' : 'lose';
+  document.getElementById('result-overlay').classList.add('show');
+}
+
+// ----------------------------------------------------------
+// セットアップ・入力・メインループ
+// ----------------------------------------------------------
+let playerSide = null;
+let aiSide = null;
+let loopStarted = false;
+
+function startMatch(difficulty) {
+  matchOver = false;
+  document.getElementById('result-overlay').classList.remove('show');
+  document.getElementById('setup-overlay').style.display = 'none';
+  document.getElementById('ai-label').textContent = `AI (${difficulty.toUpperCase()})`;
+
+  playerSide = createSide('player', false, null);
+  aiSide = createSide('ai', true, difficulty);
+
+  playerSide.current = spawnPiece(playerSide, aiSide);
+  aiSide.current = spawnPiece(aiSide, playerSide);
+  if (aiSide.current) planAndQueueAIMove(aiSide);
+  renderSide(playerSide);
+  renderSide(aiSide);
+
+  if (!loopStarted) { loopStarted = true; requestAnimationFrame(loop); }
+}
+
+function resetMatch(difficulty) {
+  startMatch(difficulty);
+}
+
+let currentDifficulty = 'normal';
+document.querySelectorAll('.diff-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentDifficulty = btn.dataset.diff;
+    startMatch(currentDifficulty);
+  });
+});
+
+document.getElementById('result-retry').addEventListener('click', () => startMatch(currentDifficulty));
+document.getElementById('result-title-btn').addEventListener('click', () => { window.location.href = 'index.html'; });
+
+document.addEventListener('keydown', (e) => {
+  if (!playerSide || playerSide.gameOver || matchOver) return;
+  switch (e.key) {
+    case 'ArrowLeft': tryMove(playerSide, -1); break;
+    case 'ArrowRight': tryMove(playerSide, 1); break;
+    case 'ArrowUp': case 'x': case 'X': tryRotate(playerSide, 'cw'); break;
+    case 'z': case 'Z': tryRotate(playerSide, 'ccw'); break;
+    case 'ArrowDown': playerSide.softDropping = true; break;
+  }
+});
+document.addEventListener('keyup', (e) => {
+  if (playerSide && e.key === 'ArrowDown') playerSide.softDropping = false;
+});
+
+let lastTime = 0;
+function updateSide(side, dt, opponent) {
+  if (side.gameOver || !side.current) return;
+  if (side.isAI && side.aiPlan) {
+    side.aiPlan.moveTimer += dt;
+    if (side.aiPlan.moveTimer >= AI_MOVE_STEP_MS) {
+      side.aiPlan.moveTimer = 0;
+      if (side.aiPlan.movesLeft > 0 && side.aiPlan.dir !== 0) {
+        tryMove(side, side.aiPlan.dir);
+        side.aiPlan.movesLeft--;
+      }
+      if (side.aiPlan.movesLeft <= 0) { side.softDropping = true; side.aiPlan = null; }
+    }
+  }
+  side.fallTimer += dt;
+  const interval = side.softDropping ? FALL_INTERVAL_SOFT : getFallInterval(side.level);
+  if (side.fallTimer >= interval) { side.fallTimer = 0; stepFall(side, opponent); }
+}
+function loop(time) {
+  if (!lastTime) lastTime = time;
+  const dt = time - lastTime;
+  lastTime = time;
+  if (playerSide && aiSide && !matchOver) {
+    updateSide(playerSide, dt, aiSide);
+    updateSide(aiSide, dt, playerSide);
+  }
+  requestAnimationFrame(loop);
+}
