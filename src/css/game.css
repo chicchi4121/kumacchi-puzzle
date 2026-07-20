@@ -95,8 +95,7 @@ html,body{
     max-width:none;
     margin:0;
     padding:10px 24px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: rgba(20,10,5,0.78);
-    box-shadow: 0 -4px 14px rgba(0,0,0,0.35);
+    background: transparent;
     z-index:30;
   }
 
@@ -104,21 +103,26 @@ html,body{
 }
 
 @media (hover: none) and (pointer: coarse) and (orientation: portrait){
-  :root{ --cell: min(56px, calc((100vw - 24px) / 6)); }
-  .wrap{ flex-direction:column; align-items:center; padding:14px 8px; gap:10px; }
-  .board-panel{ order:1; }
+  :root{ --cell: min(50px, calc((100vw - 20px) / 6), calc((100vh - 300px) / 12)); }
+  .wrap{ flex-direction:column; align-items:center; padding:44px 6px 4px; gap:6px; }
+  .board-panel{ order:1; padding:10px; }
   .next-panel{ order:2; }
   .score-panel{ order:3; }
   .next-panel, .score-panel{
     flex-direction:row;
     flex-wrap:wrap;
     justify-content:center;
-    gap:10px;
+    gap:8px;
     width: calc(var(--cell) * 6);
     max-width:none;
+    padding:8px;
   }
   .next-panel .stat, .next-panel .next-box,
-  .score-panel .stat, .score-panel .next-box{ margin-top:0 !important; }
+  .score-panel .stat, .score-panel .next-box{ margin-top:0 !important; padding:6px; }
+  .side h2{ font-size:0.8rem; margin-bottom:2px; }
+  .stat .label{ font-size:0.6rem; }
+  .stat .value{ font-size:1.1rem; }
+  body{ padding-bottom:80px; }
 }
 
 @media (max-width: 720px){

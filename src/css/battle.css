@@ -396,8 +396,7 @@ html,body{
     max-width:none;
     margin:0;
     padding:10px 20px calc(10px + env(safe-area-inset-bottom, 0px));
-    background: rgba(20,10,5,0.78);
-    box-shadow: 0 -4px 14px rgba(0,0,0,0.35);
+    background: transparent;
     z-index:30;
   }
 
