@@ -756,6 +756,7 @@ function bindTouchButton(id, onPress, onRelease) {
 }
 bindTouchButton('touch-left', () => tryMove(-1));
 bindTouchButton('touch-right', () => tryMove(1));
+bindTouchButton('touch-up', () => tryRotate('cw'));
 bindTouchButton('touch-rotate-l', () => tryRotate('ccw'));
 bindTouchButton('touch-rotate-r', () => tryRotate('cw'));
 bindTouchButton('touch-down', () => { softDropping = true; }, () => { softDropping = false; });

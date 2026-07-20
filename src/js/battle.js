@@ -944,6 +944,7 @@ function bindTouchButton(id, onPress, onRelease) {
 }
 bindTouchButton('touch-left', () => tryMove(playerSide, -1));
 bindTouchButton('touch-right', () => tryMove(playerSide, 1));
+bindTouchButton('touch-up', () => tryRotate(playerSide, 'cw'));
 bindTouchButton('touch-rotate-l', () => tryRotate(playerSide, 'ccw'));
 bindTouchButton('touch-rotate-r', () => tryRotate(playerSide, 'cw'));
 bindTouchButton('touch-down', () => { playerSide.softDropping = true; }, () => { if (playerSide) playerSide.softDropping = false; });

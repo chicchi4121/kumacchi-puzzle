@@ -39,13 +39,6 @@
       </div>
     </div>
     <div class="controls-hint">← → 移動　Z / X 回転　↓ 高速落下</div>
-    <div class="touch-controls" id="touch-controls">
-      <button class="touch-btn" id="touch-left" aria-label="左移動">◀</button>
-      <button class="touch-btn" id="touch-rotate-l" aria-label="左回転">↺</button>
-      <button class="touch-btn" id="touch-down" aria-label="高速落下">▼</button>
-      <button class="touch-btn" id="touch-rotate-r" aria-label="右回転">↻</button>
-      <button class="touch-btn" id="touch-right" aria-label="右移動">▶</button>
-    </div>
   </div>
 
   <div class="side-panel">
@@ -62,6 +55,19 @@
         <div class="chain-toast" id="chain-toast-ai"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="touch-controls" id="touch-controls">
+  <div class="dpad">
+    <button class="touch-btn dpad-btn dpad-up" id="touch-up" aria-label="回転(上)">▲</button>
+    <button class="touch-btn dpad-btn dpad-left" id="touch-left" aria-label="左移動">◀</button>
+    <button class="touch-btn dpad-btn dpad-down" id="touch-down" aria-label="高速落下">▼</button>
+    <button class="touch-btn dpad-btn dpad-right" id="touch-right" aria-label="右移動">▶</button>
+  </div>
+  <div class="rotate-pad">
+    <button class="touch-btn rotate-btn" id="touch-rotate-l" aria-label="左回転">↺</button>
+    <button class="touch-btn rotate-btn" id="touch-rotate-r" aria-label="右回転">↻</button>
   </div>
 </div>
 

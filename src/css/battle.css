@@ -7,7 +7,7 @@
   --choco-deep: #3E2712;
   --cream: #FFF3DD;
   --gray: #8a8a8a;
-  --cell: 34px;
+  --cell: 40px;
 }
 
 *{ box-sizing: border-box; margin:0; padding:0; }
@@ -340,10 +340,34 @@ html,body{
 
 .touch-controls{
   display:none;
-  margin-top:10px;
-  grid-template-columns: repeat(5, 1fr);
-  gap:6px;
+  align-items:center;
+  justify-content:space-between;
   width: calc(var(--cell) * 6);
+  max-width:420px;
+  margin:10px auto 0;
+}
+.dpad{
+  display:grid;
+  grid-template-columns: repeat(3, 48px);
+  grid-template-rows: repeat(2, 48px);
+  grid-template-areas:
+    ".    up    ."
+    "left down right";
+  gap:5px;
+}
+.dpad-up{ grid-area: up; }
+.dpad-left{ grid-area: left; }
+.dpad-down{ grid-area: down; }
+.dpad-right{ grid-area: right; }
+.rotate-pad{
+  display:flex;
+  gap:10px;
+}
+.rotate-btn{
+  width:54px;
+  height:54px;
+  border-radius:50%;
+  font-size:1.3rem;
 }
 .touch-btn{
   font-size:1.1rem;
@@ -360,14 +384,34 @@ html,body{
 }
 .touch-btn:active{ background: rgba(255,255,255,0.28); }
 
+/* タッチ端末: 操作パッドを対戦エリアの外側(画面下部)に固定表示する */
 @media (hover: none) and (pointer: coarse){
-  .touch-controls{ display:grid; }
   .controls-hint{ display:none; }
+
+  .touch-controls{
+    display:flex;
+    position:fixed;
+    left:0; right:0; bottom:0;
+    width:100%;
+    max-width:none;
+    margin:0;
+    padding:10px 20px calc(10px + env(safe-area-inset-bottom, 0px));
+    background: rgba(20,10,5,0.78);
+    box-shadow: 0 -4px 14px rgba(0,0,0,0.35);
+    z-index:30;
+  }
+
+  body{ padding-bottom:92px; }
+}
+
+@media (max-width: 720px){
+  :root{ --cell: 30px; }
+  .mini-panel{ width:70px; }
 }
 
 @media (max-width: 480px){
-  :root{ --cell: 26px; }
-  .mini-panel{ width:64px; }
+  :root{ --cell: 24px; }
+  .mini-panel{ width:60px; }
 }
 
 /* スマホ横画面(landscape)で高さが足りない場合、画面内に収まるようコンパクト化する */
@@ -383,8 +427,11 @@ html,body{
   .garbage-gauge{ padding:4px; }
   .match-timer{ top:4px; font-size:0.8rem; }
   .controls-hint{ display:none; }
-  .touch-controls{ margin-top:4px; }
-  .touch-btn{ padding:6px 0; font-size:0.9rem; }
+  body{ padding-bottom:76px; }
+  .touch-controls{ padding:8px 20px calc(8px + env(safe-area-inset-bottom, 0px)); }
+  .touch-btn{ font-size:0.9rem; }
+  .dpad{ grid-template-columns: repeat(3, 34px); grid-template-rows: repeat(2, 34px); gap:4px; }
+  .rotate-btn{ width:40px; height:40px; font-size:1rem; }
   .setup-overlay h1{ font-size:1.2rem; }
   .diff-grid{ gap:8px; }
   .diff-btn{ padding:10px 16px; min-width:110px; font-size:0.85rem; }
