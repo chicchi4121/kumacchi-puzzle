@@ -21,7 +21,8 @@ html,body{
   background: radial-gradient(ellipse at 50% 0%, #7a4d28 0%, var(--choco) 55%, var(--choco-deep) 100%);
   font-family:'M PLUS Rounded 1c', sans-serif;
   color: var(--cream);
-  overflow:hidden;
+  overflow-x:hidden;
+  overflow-y:auto;
   overscroll-behavior: none;
   touch-action: manipulation;
 }
@@ -67,6 +68,20 @@ html,body{
   .wrap{ gap:14px; padding:16px 10px; }
   .side.panel{ flex-direction:row; flex-wrap:wrap; justify-content:center; gap:10px; width:100%; max-width:320px; }
   .side.panel .stat, .side.panel .next-box{ margin-top:0 !important; }
+}
+
+/* スマホ横画面(landscape)で高さが足りない場合、画面内に収まるようコンパクト化する */
+@media (orientation: landscape) and (max-height: 520px){
+  :root{ --cell: 24px; }
+  .wrap{ padding:6px 10px; gap:10px; align-items:center; flex-wrap:nowrap; }
+  .side.panel{ flex-direction:column; width:auto; max-width:none; padding:8px; gap:6px; }
+  .stat{ padding:5px; }
+  .stat .value{ font-size:1rem; }
+  .next-box{ padding:5px; gap:2px; }
+  .next-cell{ width:18px; height:18px; }
+  .touch-controls{ margin-top:6px; }
+  .touch-btn{ padding:8px 0; font-size:1rem; }
+  .controls-hint{ display:none; }
 }
 
 .panel{

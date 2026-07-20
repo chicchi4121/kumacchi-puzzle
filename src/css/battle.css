@@ -17,7 +17,8 @@ html,body{
   background: radial-gradient(ellipse at 50% 0%, #7a4d28 0%, var(--choco) 55%, var(--choco-deep) 100%);
   font-family:'M PLUS Rounded 1c', sans-serif;
   color: var(--cream);
-  overflow:hidden;
+  overflow-x:hidden;
+  overflow-y:auto;
   overscroll-behavior: none;
   touch-action: manipulation;
 }
@@ -367,4 +368,24 @@ html,body{
 @media (max-width: 480px){
   :root{ --cell: 26px; }
   .mini-panel{ width:64px; }
+}
+
+/* スマホ横画面(landscape)で高さが足りない場合、画面内に収まるようコンパクト化する */
+@media (orientation: landscape) and (max-height: 520px){
+  :root{ --cell: 20px; }
+  .arena{ padding:4px 8px; gap:8px; flex-wrap:nowrap; }
+  .side-panel{ gap:4px; }
+  .player-label{ font-size:0.75rem; }
+  .mini-panel{ width:52px; gap:4px; }
+  .mini-box{ padding:4px; }
+  .mini-box .value{ font-size:0.85rem; }
+  .next-mini-cell{ width:16px; height:16px; }
+  .garbage-gauge{ padding:4px; }
+  .match-timer{ top:4px; font-size:0.8rem; }
+  .controls-hint{ display:none; }
+  .touch-controls{ margin-top:4px; }
+  .touch-btn{ padding:6px 0; font-size:0.9rem; }
+  .setup-overlay h1{ font-size:1.2rem; }
+  .diff-grid{ gap:8px; }
+  .diff-btn{ padding:10px 16px; min-width:110px; font-size:0.85rem; }
 }
