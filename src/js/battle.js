@@ -120,9 +120,6 @@ function canPlace(grid, axisRow, axisCol, orientation) {
 function findGroups(grid) {
   const visited = Array.from({ length: SPAWN_ROW }, () => new Array(COLS).fill(false));
   const groups = [];
-  function matches(cellColor, groupColor) {
-    return cellColor === groupColor || cellColor === 'white';
-  }
   function bfsFrom(r, c, seedColor) {
     const stack = [[r, c]]; visited[r][c] = true; const group = [];
     while (stack.length) {
@@ -131,20 +128,16 @@ function findGroups(grid) {
       for (const [nr, nc] of neighbors) {
         if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) continue;
         if (visited[nr][nc]) continue;
-        if (matches(grid[nr][nc], seedColor)) { visited[nr][nc] = true; stack.push([nr, nc]); }
+        if (grid[nr][nc] === seedColor) { visited[nr][nc] = true; stack.push([nr, nc]); }
       }
     }
     return group;
   }
+  // 白・灰(お邪魔)は色グループに参加しない。隣接する色が消える時だけ巻き込まれて消える。
   for (let r = 0; r < SPAWN_ROW; r++) for (let c = 0; c < COLS; c++) {
     const seedColor = grid[r][c];
     if (!seedColor || seedColor === 'gray' || seedColor === 'white' || visited[r][c]) continue;
     const group = bfsFrom(r, c, seedColor);
-    if (group.length >= 4) groups.push(group);
-  }
-  for (let r = 0; r < SPAWN_ROW; r++) for (let c = 0; c < COLS; c++) {
-    if (grid[r][c] !== 'white' || visited[r][c]) continue;
-    const group = bfsFrom(r, c, 'white');
     if (group.length >= 4) groups.push(group);
   }
   return groups;
@@ -182,25 +175,23 @@ function simulateResolve(grid) {
     const groups = findGroups(grid);
     if (groups.length === 0) break;
     const cellsToClear = [];
-    groups.forEach(g => g.forEach(([r, c]) => {
-      if (grid[r][c] === 'white') {
-        const hasTop = r + 1 < SPAWN_ROW && grid[r + 1][c] !== null;
-        if (!hasTop) return;
-      }
-      cellsToClear.push([r, c]);
-    }));
+    groups.forEach(g => g.forEach(([r, c]) => cellsToClear.push([r, c])));
     if (cellsToClear.length === 0) break;
     const clearSet = new Set(cellsToClear.map(([r, c]) => `${r},${c}`));
     cellsToClear.forEach(([r, c]) => {
       [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]].forEach(([nr, nc]) => {
         if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) return;
         const key = `${nr},${nc}`;
-        if (grid[nr][nc] === 'gray' && !clearSet.has(key)) { clearSet.add(key); cellsToClear.push([nr, nc]); }
+        if (clearSet.has(key)) return;
+        if (grid[nr][nc] === 'gray' || grid[nr][nc] === 'white') {
+          clearSet.add(key);
+          cellsToClear.push([nr, nc]);
+          if (grid[nr][nc] === 'white') whiteUsed = true;
+        }
       });
     });
     chainCount += 1;
     if (chainCount === 1) firstGroupCount = groups.length;
-    if (cellsToClear.some(([r, c]) => grid[r][c] === 'white')) whiteUsed = true;
     totalCleared += cellsToClear.length;
     cellsToClear.forEach(([r, c]) => { grid[r][c] = null; });
     applyGravity(grid);
@@ -229,7 +220,6 @@ function simulatePlacement(grid, axisColor, subColor, axisCol, orientation) {
 function computeSetupPotential(grid) {
   // まだ消えていない色クラスタ(2〜3個の隣接)を評価し、将来の連鎖の"仕込み"を数値化する
   const visited = Array.from({ length: SPAWN_ROW }, () => new Array(COLS).fill(false));
-  function matches(cc, gc) { return cc === gc || cc === 'white'; }
   let potential = 0;
   for (let r = 0; r < SPAWN_ROW; r++) for (let c = 0; c < COLS; c++) {
     const seed = grid[r][c];
@@ -240,7 +230,7 @@ function computeSetupPotential(grid) {
       for (const [nr, nc] of [[cr + 1, cc2], [cr - 1, cc2], [cr, cc2 + 1], [cr, cc2 - 1]]) {
         if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) continue;
         if (visited[nr][nc]) continue;
-        if (matches(grid[nr][nc], seed)) { visited[nr][nc] = true; stack.push([nr, nc]); }
+        if (grid[nr][nc] === seed) { visited[nr][nc] = true; stack.push([nr, nc]); }
       }
     }
     if (size === 3) potential += 12;
@@ -361,11 +351,29 @@ function createSide(id, isAI, difficulty) {
 function randomColorFor(side) {
   const forceAll = matchDifficulty === 'hard' || matchDifficulty === 'master';
   const pool = colorsForLevel(side.level, forceAll);
-  return pool[Math.floor(Math.random() * pool.length)];
+  // 白は他の色より出現しにくくする(重み0.35倍)
+  const weights = pool.map(c => (c === 'white' ? 0.35 : 1));
+  const total = weights.reduce((a, b) => a + b, 0);
+  let r = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) {
+    r -= weights[i];
+    if (r <= 0) return pool[i];
+  }
+  return pool[pool.length - 1];
 }
 function fillQueue(side) {
   while (side.queue.length < 2) {
-    side.queue.push({ axisColor: randomColorFor(side), subColor: randomColorFor(side) });
+    const axisColor = randomColorFor(side);
+    let subColor = randomColorFor(side);
+    // 白×白の組み合わせは避ける(同時に2個出てこないように)
+    if (axisColor === 'white' && subColor === 'white') {
+      const forceAll = matchDifficulty === 'hard' || matchDifficulty === 'master';
+      const nonWhitePool = colorsForLevel(side.level, forceAll).filter(c => c !== 'white');
+      subColor = nonWhitePool.length > 0
+        ? nonWhitePool[Math.floor(Math.random() * nonWhitePool.length)]
+        : subColor;
+    }
+    side.queue.push({ axisColor, subColor });
   }
 }
 
@@ -520,33 +528,27 @@ function resolveBoardAnimated(side) {
       const groups = findGroups(side.grid);
       if (groups.length === 0) { renderSide(side); finish(); return; }
 
-      // グループごとに実際に消えるセルを計算(白は支えがない場合はそのグループから除外)
-      const perGroupCleared = groups.map(g => g.filter(([r, c]) => {
-        if (side.grid[r][c] === 'white') {
-          const hasTop = r + 1 < SPAWN_ROW && side.grid[r + 1][c] !== null;
-          return hasTop;
-        }
-        return true;
-      }));
+      // findGroups()の時点で白・灰は色グループに含まれないので、そのままcellsToClearとする
+      const perGroupCleared = groups;
       const cellsToClear = [];
       perGroupCleared.forEach(g => cellsToClear.push(...g));
 
       if (cellsToClear.length === 0) { renderSide(side); finish(); return; }
 
-      // お邪魔ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える(得点対象外)
+      // お邪魔ブロック・白ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える
       const clearSet = new Set(cellsToClear.map(([r, c]) => `${r},${c}`));
       const grayToClear = [];
+      const whiteSweptToClear = [];
       cellsToClear.forEach(([r, c]) => {
         [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]].forEach(([nr, nc]) => {
           if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) return;
           const key = `${nr},${nc}`;
-          if (side.grid[nr][nc] === 'gray' && !clearSet.has(key)) {
-            clearSet.add(key);
-            grayToClear.push([nr, nc]);
-          }
+          if (clearSet.has(key)) return;
+          if (side.grid[nr][nc] === 'gray') { clearSet.add(key); grayToClear.push([nr, nc]); }
+          else if (side.grid[nr][nc] === 'white') { clearSet.add(key); whiteSweptToClear.push([nr, nc]); }
         });
       });
-      const allClearingCells = [...cellsToClear, ...grayToClear];
+      const allClearingCells = [...cellsToClear, ...grayToClear, ...whiteSweptToClear];
 
       side.chainCount += 1;
       allClearingCells.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.add('clearing'); });
@@ -556,10 +558,13 @@ function resolveBoardAnimated(side) {
       const clearScore = computeClearScore(groupSizes);
       const chainBonus = computeChainBonus(side.chainCount);
       side.score += clearScore + chainBonus;
+      // 白ブロックを消すと、1個につき相手へお邪魔12個+自分の得点+5000点
+      if (whiteSweptToClear.length > 0) {
+        side.score += whiteSweptToClear.length * 5000;
+        totalGarbage += whiteSweptToClear.length * 12;
+      }
       side.scoreEl.textContent = side.score;
 
-      const whiteClearedThisStep = cellsToClear.some(([r, c]) => side.grid[r][c] === 'white');
-      if (whiteClearedThisStep) totalGarbage += 12; // 白ブロック消去でお邪魔2段(6列×2段)ぶんを追加
       totalGarbage += getGarbageSendAmount(side.chainCount) + getSimultaneousBonus(groups.length);
 
       side.clearedThisLevel += allClearingCells.length;
