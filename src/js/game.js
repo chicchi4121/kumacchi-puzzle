@@ -541,6 +541,9 @@ function resetGame() {
   levelEl.textContent = '1';
   liveTimeEl.textContent = '0:00';
   gameStartTime = Date.now();
+  paused = false;
+  pauseOverlay.classList.remove('show');
+  pauseToggle.textContent = '⏸';
   current = spawnPiece();
   render();
 }
@@ -662,6 +665,13 @@ const BLOCK_IMAGE_PATHS = {
   gray: 'assets/images/blocks/gray.png',
 };
 
+// ページ読み込み時に画像を先読みしておき、ゲーム開始直後にブロックが
+// 一瞬見えなくなる(画像読み込み待ち)のを防ぐ
+Object.values(BLOCK_IMAGE_PATHS).forEach((src) => {
+  const img = new Image();
+  img.src = src;
+});
+
 function applyBlockFace(el, color) {
   if (!color) {
     el.className = 'cell';
@@ -714,7 +724,7 @@ function render() {
 // 入力
 // ----------------------------------------------------------
 document.addEventListener('keydown', (e) => {
-  if (gameOver) return;
+  if (gameOver || paused) return;
   switch (e.key) {
     case 'ArrowLeft':
       tryMove(-1);
@@ -744,7 +754,7 @@ document.addEventListener('keyup', (e) => {
 function bindTouchButton(id, onPress, onRelease) {
   const el = document.getElementById(id);
   if (!el) return;
-  const press = (e) => { e.preventDefault(); if (!gameOver) onPress(); };
+  const press = (e) => { e.preventDefault(); if (!gameOver && !paused) onPress(); };
   const release = (e) => { e.preventDefault(); if (onRelease) onRelease(); };
   el.addEventListener('touchstart', press, { passive: false });
   el.addEventListener('mousedown', press);
@@ -762,6 +772,37 @@ bindTouchButton('touch-rotate-r', () => tryRotate('cw'));
 bindTouchButton('touch-down', () => { softDropping = true; }, () => { softDropping = false; });
 
 // ----------------------------------------------------------
+// ポーズ機能: ポーズ中は盤面を完全に隠し、落下・入力・タイムを止める
+// ----------------------------------------------------------
+let paused = false;
+let pauseStartedAt = 0;
+let bgmWasPlayingBeforePause = false;
+const pauseToggle = document.getElementById('pause-toggle');
+const pauseOverlay = document.getElementById('pause-overlay');
+const resumeBtn = document.getElementById('resume-btn');
+
+function setPaused(value) {
+  if (gameOver || paused === value) return;
+  paused = value;
+  if (paused) {
+    pauseStartedAt = Date.now();
+    softDropping = false;
+    pauseOverlay.classList.add('show');
+    pauseToggle.textContent = '▶';
+    bgmWasPlayingBeforePause = !bgm.paused;
+    bgm.pause();
+  } else {
+    // 停止していた時間ぶん、開始時刻を後ろにずらして経過時間の計算がずれないようにする
+    gameStartTime += Date.now() - pauseStartedAt;
+    pauseOverlay.classList.remove('show');
+    pauseToggle.textContent = '⏸';
+    if (bgmWasPlayingBeforePause) bgm.play().then(updateSoundIcon).catch(() => {});
+  }
+}
+pauseToggle.addEventListener('click', () => setPaused(!paused));
+resumeBtn.addEventListener('click', () => setPaused(false));
+
+// ----------------------------------------------------------
 // メインループ
 // ----------------------------------------------------------
 function loop(time) {
@@ -769,7 +810,7 @@ function loop(time) {
   const dt = time - lastTime;
   lastTime = time;
 
-  if (!gameOver && current) {
+  if (!gameOver && !paused && current) {
     fallTimer += dt;
     const interval = softDropping ? FALL_INTERVAL_SOFT : getFallInterval(level);
     if (fallTimer >= interval) {

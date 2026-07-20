@@ -5,12 +5,20 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>くまっちパズル - AI対戦</title>
 <link rel="stylesheet" href="src/css/battle.css">
+<link rel="preload" as="image" href="assets/images/blocks/red.png">
+<link rel="preload" as="image" href="assets/images/blocks/blue.png">
+<link rel="preload" as="image" href="assets/images/blocks/yellow.png">
+<link rel="preload" as="image" href="assets/images/blocks/green.png">
+<link rel="preload" as="image" href="assets/images/blocks/purple.png">
+<link rel="preload" as="image" href="assets/images/blocks/white.png">
+<link rel="preload" as="image" href="assets/images/blocks/gray.png">
 </head>
 <body>
 <a class="back-link" href="index.html">← タイトルへ</a>
 <audio id="title-bgm" src="assets/audio/title-bgm.mp3" loop preload="auto"></audio>
 <audio id="game-bgm" src="assets/audio/game-bgm.mp3" loop preload="auto"></audio>
 <button class="sound-toggle" id="sound-toggle" aria-label="音を再生">🔈</button>
+<button class="pause-toggle" id="pause-toggle" aria-label="ポーズ">⏸</button>
 
 <div class="setup-overlay" id="setup-overlay">
   <h1>AI対戦 - 難易度を選んでね</h1>
@@ -86,6 +94,11 @@
 
 <div class="countdown-overlay" id="countdown-overlay">
   <div class="countdown-number" id="countdown-number">3</div>
+</div>
+
+<div class="pause-overlay" id="pause-overlay">
+  <h2>PAUSE</h2>
+  <button class="result-btn" id="resume-btn">再開する</button>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>

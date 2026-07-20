@@ -20,6 +20,13 @@ const BLOCK_IMAGE_PATHS = {
   gray: 'assets/images/blocks/gray.png',
 };
 
+// 難易度選択中のうちに画像を先読みしておき、対戦開始直後にブロックが
+// 一瞬見えなくなる(画像読み込み待ち)のを防ぐ
+Object.values(BLOCK_IMAGE_PATHS).forEach((src) => {
+  const img = new Image();
+  img.src = src;
+});
+
 const FALL_INTERVAL_BASE = 800;
 const FALL_INTERVAL_MIN = 100;
 const FALL_INTERVAL_SOFT = 45;
@@ -292,6 +299,7 @@ function decideMove(side) {
 // DOM構築
 // ----------------------------------------------------------
 function buildBoardDom(gridCellsEl) {
+  gridCellsEl.innerHTML = ''; // 前回分の古いセルを必ず消してから作り直す
   const cellEls = [];
   for (let r = ROWS - 1; r >= 0; r--) {
     cellEls[r] = cellEls[r] || [];
@@ -726,6 +734,9 @@ function prepareBoards(difficulty) {
   matchTimerEl.textContent = '0:00';
   matchStartTime = 0;
   matchDifficulty = difficulty;
+  paused = false;
+  pauseOverlay.classList.remove('show');
+  pauseToggle.textContent = '⏸';
 
   playerSide = createSide('player', false, null);
   aiSide = createSide('ai', true, difficulty);
@@ -914,7 +925,7 @@ rankSubmitBtn.addEventListener('click', async () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  if (!playerSide || playerSide.gameOver || matchOver) return;
+  if (!playerSide || playerSide.gameOver || matchOver || paused) return;
   switch (e.key) {
     case 'ArrowLeft': tryMove(playerSide, -1); break;
     case 'ArrowRight': tryMove(playerSide, 1); break;
@@ -931,7 +942,7 @@ document.addEventListener('keyup', (e) => {
 function bindTouchButton(id, onPress, onRelease) {
   const el = document.getElementById(id);
   if (!el) return;
-  const canAct = () => playerSide && !playerSide.gameOver && !matchOver;
+  const canAct = () => playerSide && !playerSide.gameOver && !matchOver && !paused;
   const press = (e) => { e.preventDefault(); if (canAct()) onPress(); };
   const release = (e) => { e.preventDefault(); if (onRelease) onRelease(); };
   el.addEventListener('touchstart', press, { passive: false });
@@ -948,6 +959,36 @@ bindTouchButton('touch-up', () => tryRotate(playerSide, 'cw'));
 bindTouchButton('touch-rotate-l', () => tryRotate(playerSide, 'ccw'));
 bindTouchButton('touch-rotate-r', () => tryRotate(playerSide, 'cw'));
 bindTouchButton('touch-down', () => { playerSide.softDropping = true; }, () => { if (playerSide) playerSide.softDropping = false; });
+
+// ----------------------------------------------------------
+// ポーズ機能: ポーズ中は両者の盤面を完全に隠し、進行を止める
+// ----------------------------------------------------------
+let paused = false;
+let pauseStartedAt = 0;
+let bgmWasPlayingBeforePause = false;
+const pauseToggle = document.getElementById('pause-toggle');
+const pauseOverlay = document.getElementById('pause-overlay');
+const resumeBtn = document.getElementById('resume-btn');
+
+function setPaused(value) {
+  if (!playerSide || matchOver || paused === value) return;
+  paused = value;
+  if (paused) {
+    pauseStartedAt = Date.now();
+    if (playerSide) playerSide.softDropping = false;
+    pauseOverlay.classList.add('show');
+    pauseToggle.textContent = '▶';
+    bgmWasPlayingBeforePause = !activeBgm.paused;
+    activeBgm.pause();
+  } else {
+    if (matchStartTime) matchStartTime += Date.now() - pauseStartedAt;
+    pauseOverlay.classList.remove('show');
+    pauseToggle.textContent = '⏸';
+    if (bgmWasPlayingBeforePause) playBgm(activeBgm);
+  }
+}
+pauseToggle.addEventListener('click', () => setPaused(!paused));
+resumeBtn.addEventListener('click', () => setPaused(false));
 
 let lastTime = 0;
 function updateSide(side, dt, opponent) {
@@ -971,7 +1012,7 @@ function loop(time) {
   if (!lastTime) lastTime = time;
   const dt = time - lastTime;
   lastTime = time;
-  if (playerSide && aiSide && !matchOver) {
+  if (playerSide && aiSide && !matchOver && !paused) {
     updateSide(playerSide, dt, aiSide);
     updateSide(aiSide, dt, playerSide);
     if (matchStartTime) {

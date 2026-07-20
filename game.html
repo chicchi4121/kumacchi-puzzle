@@ -10,6 +10,7 @@
 <a class="back-link" href="index.html">← タイトルへ</a>
 <audio id="bgm" src="assets/audio/game-bgm.mp3" loop preload="auto"></audio>
 <button class="sound-toggle" id="sound-toggle" aria-label="音を再生">🔈</button>
+<button class="pause-toggle" id="pause-toggle" aria-label="ポーズ">⏸</button>
 
 <div class="wrap">
   <div class="side panel next-panel">
@@ -34,6 +35,10 @@
         <button class="retry-btn" id="retry-btn">もう一度</button>
         <button class="retry-btn" id="title-btn">タイトルへ戻る</button>
         <a class="rank-link" href="ranking.html">ランキングを見る →</a>
+      </div>
+      <div class="pause-overlay" id="pause-overlay">
+        <h2>PAUSE</h2>
+        <button class="retry-btn" id="resume-btn">再開する</button>
       </div>
     </div>
     <div class="controls-hint">

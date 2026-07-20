@@ -48,6 +48,42 @@ html,body{
 }
 .sound-toggle:hover{ transform: scale(1.08); background: rgba(0,0,0,0.45); }
 
+.pause-toggle{
+  position:fixed;
+  top:14px;
+  right:64px;
+  width:40px;
+  height:40px;
+  border-radius:50%;
+  border:none;
+  background: rgba(0,0,0,0.3);
+  color: var(--cream);
+  font-size:1.1rem;
+  cursor:pointer;
+  z-index:20;
+  transition: transform 0.12s ease, background 0.12s ease;
+}
+.pause-toggle:hover{ transform: scale(1.08); background: rgba(0,0,0,0.45); }
+
+.pause-overlay{
+  position:fixed; inset:0;
+  background: var(--choco-deep);
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:18px;
+  z-index:36;
+  opacity:0; pointer-events:none;
+  transition: opacity 0.2s ease;
+}
+.pause-overlay.show{ opacity:1; pointer-events:all; }
+.pause-overlay h2{
+  font-family:'Baloo 2', sans-serif;
+  font-size:2rem;
+  color: var(--honey);
+  -webkit-text-stroke: 2px var(--choco-deep);
+  paint-order: stroke fill;
+  letter-spacing:3px;
+}
+
 .match-timer{
   position:fixed;
   top:14px;
@@ -416,7 +452,7 @@ html,body{
 /* スマホ横画面(landscape)で高さが足りない場合、画面内に収まるようコンパクト化する */
 @media (orientation: landscape) and (max-height: 520px){
   :root{ --cell: 20px; }
-  .arena{ padding:4px 8px; gap:8px; flex-wrap:nowrap; }
+  .arena{ padding:32px 8px 4px; gap:8px; flex-wrap:nowrap; }
   .side-panel{ gap:4px; }
   .player-label{ font-size:0.75rem; }
   .mini-panel{ width:52px; gap:4px; }
