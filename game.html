@@ -8,6 +8,8 @@
 </head>
 <body>
 <a class="back-link" href="index.html">← タイトルへ</a>
+<audio id="bgm" src="assets/audio/game-bgm.mp3" loop preload="auto"></audio>
+<button class="sound-toggle" id="sound-toggle" aria-label="音を再生">🔈</button>
 
 <div class="wrap">
   <div class="side panel">
@@ -23,8 +25,15 @@
       <div class="zenkeshi-toast" id="zenkeshi-toast">全消し！ +5000</div>
       <div class="gameover-overlay" id="gameover">
         <h2>GAME OVER</h2>
+        <div class="match-time-display" id="time-display">プレイ時間: 0:00</div>
+        <div class="rank-submit" id="rank-submit">
+          <input type="text" id="rank-name" maxlength="12" placeholder="なまえ(12文字まで)">
+          <button class="retry-btn" id="rank-submit-btn">ランキングに登録</button>
+          <div class="rank-status" id="rank-status"></div>
+        </div>
         <button class="retry-btn" id="retry-btn">もう一度</button>
         <button class="retry-btn" id="title-btn">タイトルへ戻る</button>
+        <a class="rank-link" href="ranking.html">ランキングを見る →</a>
       </div>
     </div>
     <div class="controls-hint">
@@ -41,9 +50,15 @@
       <div class="label">LEVEL</div>
       <div class="value" id="level-value">1</div>
     </div>
+    <div class="stat" style="margin-top:10px;">
+      <div class="label">TIME</div>
+      <div class="value" id="live-time-value">0:00</div>
+    </div>
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="src/js/supabase-config.js"></script>
 <script src="src/js/game.js"></script>
 </body>
 </html>

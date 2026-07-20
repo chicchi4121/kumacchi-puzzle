@@ -8,6 +8,9 @@
 </head>
 <body>
 <a class="back-link" href="index.html">← タイトルへ</a>
+<audio id="title-bgm" src="assets/audio/title-bgm.mp3" loop preload="auto"></audio>
+<audio id="game-bgm" src="assets/audio/game-bgm.mp3" loop preload="auto"></audio>
+<button class="sound-toggle" id="sound-toggle" aria-label="音を再生">🔈</button>
 
 <div class="setup-overlay" id="setup-overlay">
   <h1>AI対戦 - 難易度を選んでね</h1>
@@ -19,6 +22,7 @@
   </div>
 </div>
 
+<div class="match-timer" id="match-timer">0:00</div>
 <div class="arena">
   <div class="side-panel">
     <div class="player-label">YOU</div>
@@ -56,10 +60,23 @@
 
 <div class="result-overlay" id="result-overlay">
   <h2 id="result-title">WIN!</h2>
+  <div class="match-time-display" id="match-time-display">クリアタイム: 0:00</div>
+  <div class="rank-submit" id="rank-submit">
+    <input type="text" id="rank-name" maxlength="12" placeholder="なまえ(12文字まで)">
+    <button class="result-btn" id="rank-submit-btn">ランキングに登録</button>
+    <div class="rank-status" id="rank-status"></div>
+  </div>
   <button class="result-btn" id="result-retry">もう一度</button>
   <button class="result-btn" id="result-title-btn">タイトルへ戻る</button>
+  <a class="rank-link" href="ranking.html">ランキングを見る →</a>
 </div>
 
+<div class="countdown-overlay" id="countdown-overlay">
+  <div class="countdown-number" id="countdown-number">3</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="src/js/supabase-config.js"></script>
 <script src="src/js/battle.js"></script>
 </body>
 </html>

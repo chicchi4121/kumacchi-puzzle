@@ -63,3 +63,30 @@ Renderの **Static Site** を使うのが最もシンプルです。
 - Phase1〜Phase4(AI対戦まで)はブラウザだけで動くため、Static Siteのままで問題ありません。
 - Phase5のオンライン対戦(リアルタイム通信)を実装する段階になったら、
   RenderのプランをStatic SiteからWeb Service(Node.jsサーバー)に切り替える必要があります。
+
+## Supabase連携(ランキング機能)のセットアップ手順
+
+1. https://supabase.com でアカウントを作成し、新しいプロジェクトを作成する
+2. プロジェクト作成後、左メニューの **SQL Editor** を開き、
+   このリポジトリの `supabase/schema.sql` の中身を貼り付けて実行する
+   (`scores` テーブルとアクセス権限が作成されます)
+3. 左メニューの **Project Settings → API** を開き、以下の2つをコピーする
+   - **Project URL**
+   - **anon public key**
+4. `src/js/supabase-config.js` を開き、以下の2箇所を書き換える
+
+```js
+const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';       // ← コピーしたProject URLに置き換える
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE'; // ← コピーしたanon public keyに置き換える
+```
+
+5. 保存してGitHubにアップロードし直せば、Renderに自動反映されます
+
+これで、ゲームオーバー画面の「ランキングに登録」ボタンからスコアを送信でき、
+`ranking.html`(タイトル画面の「🏆 ランキングを見る」リンク)で
+ソロプレイ・AI対戦それぞれの上位20件を確認できるようになります。
+
+**注意**: `anon public key` は「公開されても問題ない」設計の鍵です(閲覧・登録のみ許可し、
+更新・削除は許可しないポリシーを `schema.sql` で設定しています)。
+一方で、データベースの管理用パスワードや `service_role key` は絶対にコードに含めたり
+GitHubにアップロードしたりしないでください。

@@ -31,3 +31,49 @@ document.getElementById('start-btn').addEventListener('click', () => {
 document.getElementById('battle-btn').addEventListener('click', () => {
   window.location.href = 'battle.html';
 });
+
+// タイトルBGM: 開いた瞬間に自動再生する
+// (ブラウザは「音あり」の自動再生をブロックすることが多いが、
+//  「ミュートで再生開始→再生が始まってからミュート解除」は多くのブラウザで許可される)
+const bgm = document.getElementById('bgm');
+const soundToggle = document.getElementById('sound-toggle');
+bgm.volume = 0.3;
+
+function updateSoundIcon() {
+  soundToggle.textContent = (!bgm.paused && !bgm.muted) ? '🔊' : '🔈';
+}
+
+function tryPlayBgm() {
+  bgm.muted = true;
+  const p = bgm.play();
+  if (p && p.then) {
+    p.then(() => {
+      // 再生が始まったのでミュート解除(多くのブラウザでここは追加の操作なしで通る)
+      bgm.muted = false;
+      updateSoundIcon();
+    }).catch(() => {
+      // それでもブロックされた場合のみ、最初のユーザー操作で再生する
+      bgm.muted = false;
+      const resumeOnInteraction = () => {
+        bgm.play().then(updateSoundIcon).catch(() => {});
+        document.removeEventListener('click', resumeOnInteraction);
+        document.removeEventListener('keydown', resumeOnInteraction);
+        document.removeEventListener('touchstart', resumeOnInteraction);
+      };
+      document.addEventListener('click', resumeOnInteraction, { once: true });
+      document.addEventListener('keydown', resumeOnInteraction, { once: true });
+      document.addEventListener('touchstart', resumeOnInteraction, { once: true });
+    });
+  }
+}
+tryPlayBgm();
+
+soundToggle.addEventListener('click', () => {
+  if (bgm.paused) {
+    bgm.muted = false;
+    bgm.play().then(updateSoundIcon).catch(() => {});
+  } else {
+    bgm.pause();
+    updateSoundIcon();
+  }
+});

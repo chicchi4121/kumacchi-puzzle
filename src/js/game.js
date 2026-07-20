@@ -12,6 +12,7 @@ const FALL_INTERVAL_BASE = 800; // ms (Lv1-5)
 const FALL_INTERVAL_MIN = 100;  // ms (Lv50到達時の最高速度)
 const FALL_INTERVAL_SOFT = 45;    // ms (ソフトドロップ中)
 const LOCK_DELAY = 350;           // ms (着地してから固定するまでの猶予)
+const FALL_SETTLE_DELAY = 220;    // ms (重力で落ちきってから次の連鎖判定に入るまでの間)
 
 // レベルに応じた自然落下の間隔(ms)を計算する。
 // Lv1-5: 固定速度 / Lv6-50: 徐々に速く(線形補間) / Lv51-99: 最高速度維持
@@ -76,6 +77,7 @@ const chainToastEl = document.getElementById('chain-toast');
 const zenkeshiToastEl = document.getElementById('zenkeshi-toast');
 const scoreEl = document.getElementById('score-value');
 const levelEl = document.getElementById('level-value');
+const liveTimeEl = document.getElementById('live-time-value');
 const gameoverEl = document.getElementById('gameover');
 const retryBtn = document.getElementById('retry-btn');
 const titleBtn = document.getElementById('title-btn');
@@ -401,6 +403,21 @@ function resolveBoard() {
         return;
       }
 
+      // お邪魔ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える
+      const clearSet = new Set(cellsToClear.map(([r, c]) => `${r},${c}`));
+      const grayToClear = [];
+      cellsToClear.forEach(([r, c]) => {
+        [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]].forEach(([nr, nc]) => {
+          if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) return;
+          const key = `${nr},${nc}`;
+          if (grid[nr][nc] === 'gray' && !clearSet.has(key)) {
+            clearSet.add(key);
+            grayToClear.push([nr, nc]);
+          }
+        });
+      });
+      cellsToClear.push(...grayToClear);
+
       chainCount += 1;
 
       cellsToClear.forEach(([r, c]) => {
@@ -442,7 +459,8 @@ function resolveBoard() {
         cellsToClear.forEach(([r, c]) => {
           if (r < ROWS) cellEls[r][c].classList.remove('clearing');
         });
-        step();
+        // ブロックが落ちきるまで少し待ってから次の連鎖判定を行う
+        setTimeout(step, FALL_SETTLE_DELAY);
       }, 300);
     }
     step();
@@ -470,6 +488,18 @@ function showZenkeshiEffect() {
 function triggerGameOver() {
   gameOver = true;
   gameoverEl.classList.add('show');
+  lastPlayDurationSeconds = Math.max(0, Math.round((Date.now() - gameStartTime) / 1000));
+  timeDisplayEl.textContent = `プレイ時間: ${formatDuration(lastPlayDurationSeconds)}`;
+  rankNameInput.value = '';
+  rankStatusEl.textContent = '';
+  rankSubmitBtn.disabled = false;
+  rankSubmitBtn.textContent = 'ランキングに登録';
+}
+
+function formatDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 function resetGame() {
@@ -486,6 +516,8 @@ function resetGame() {
   gameoverEl.classList.remove('show');
   scoreEl.textContent = '0';
   levelEl.textContent = '1';
+  liveTimeEl.textContent = '0:00';
+  gameStartTime = Date.now();
   current = spawnPiece();
   render();
 }
@@ -493,6 +525,76 @@ function resetGame() {
 retryBtn.addEventListener('click', resetGame);
 titleBtn.addEventListener('click', () => {
   window.location.href = 'index.html';
+});
+
+// ----------------------------------------------------------
+// ランキング登録(Supabase)
+// ----------------------------------------------------------
+const rankNameInput = document.getElementById('rank-name');
+const rankSubmitBtn = document.getElementById('rank-submit-btn');
+const rankStatusEl = document.getElementById('rank-status');
+const timeDisplayEl = document.getElementById('time-display');
+
+rankSubmitBtn.addEventListener('click', async () => {
+  const name = rankNameInput.value.trim();
+  if (!name) {
+    rankStatusEl.textContent = 'なまえを入力してください';
+    return;
+  }
+  if (!supabaseClient) {
+    rankStatusEl.textContent = 'ランキング機能は準備中です';
+    return;
+  }
+  rankSubmitBtn.disabled = true;
+  rankSubmitBtn.textContent = '送信中...';
+  const { error } = await supabaseClient.from('scores').insert({
+    name: name.slice(0, 12),
+    score: score,
+    level: level,
+    mode: 'solo',
+    duration_seconds: lastPlayDurationSeconds,
+  });
+  if (error) {
+    rankStatusEl.textContent = '登録に失敗しました';
+    rankSubmitBtn.disabled = false;
+    rankSubmitBtn.textContent = 'ランキングに登録';
+    console.error(error);
+  } else {
+    rankStatusEl.textContent = '登録しました!';
+    rankSubmitBtn.textContent = '登録済み';
+  }
+});
+
+// ゲーム中BGM: 音量小さめ・自動再生ブロック対策
+const bgm = document.getElementById('bgm');
+const soundToggle = document.getElementById('sound-toggle');
+bgm.volume = 0.22;
+
+function updateSoundIcon() {
+  soundToggle.textContent = (!bgm.paused && !bgm.muted) ? '🔊' : '🔈';
+}
+function tryPlayBgm() {
+  bgm.muted = true;
+  const p = bgm.play();
+  if (p && p.then) {
+    p.then(() => { bgm.muted = false; updateSoundIcon(); }).catch(() => {
+      bgm.muted = false;
+      const resumeOnInteraction = () => {
+        bgm.play().then(updateSoundIcon).catch(() => {});
+        document.removeEventListener('click', resumeOnInteraction);
+        document.removeEventListener('keydown', resumeOnInteraction);
+        document.removeEventListener('touchstart', resumeOnInteraction);
+      };
+      document.addEventListener('click', resumeOnInteraction, { once: true });
+      document.addEventListener('keydown', resumeOnInteraction, { once: true });
+      document.addEventListener('touchstart', resumeOnInteraction, { once: true });
+    });
+  }
+}
+tryPlayBgm();
+soundToggle.addEventListener('click', () => {
+  if (bgm.paused) { bgm.play().then(updateSoundIcon).catch(() => {}); }
+  else { bgm.pause(); updateSoundIcon(); }
 });
 
 // ----------------------------------------------------------
@@ -506,17 +608,12 @@ const BLOCK_IMAGE_PATHS = {
   green: 'assets/images/blocks/green.png',
   purple: 'assets/images/blocks/purple.png',
   white: 'assets/images/blocks/white.png',
+  gray: 'assets/images/blocks/gray.png',
 };
 
 function applyBlockFace(el, color) {
   if (!color) {
     el.className = 'cell';
-    el.style.backgroundImage = '';
-    return;
-  }
-  if (color === 'gray') {
-    // おじゃまブロックは顔なしの無地(Phase3で実装)
-    el.className = 'cell filled gray';
     el.style.backgroundImage = '';
     return;
   }
@@ -607,6 +704,7 @@ function loop(time) {
       fallTimer = 0;
       stepFall();
     }
+    liveTimeEl.textContent = formatDuration(Math.floor((Date.now() - gameStartTime) / 1000));
   }
   requestAnimationFrame(loop);
 }
@@ -614,6 +712,8 @@ function loop(time) {
 // ----------------------------------------------------------
 // 開始
 // ----------------------------------------------------------
+let gameStartTime = Date.now();
+let lastPlayDurationSeconds = 0;
 current = spawnPiece();
 render();
 requestAnimationFrame(loop);

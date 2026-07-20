@@ -17,12 +17,14 @@ const BLOCK_IMAGE_PATHS = {
   green: 'assets/images/blocks/green.png',
   purple: 'assets/images/blocks/purple.png',
   white: 'assets/images/blocks/white.png',
+  gray: 'assets/images/blocks/gray.png',
 };
 
 const FALL_INTERVAL_BASE = 800;
 const FALL_INTERVAL_MIN = 100;
 const FALL_INTERVAL_SOFT = 45;
 const LOCK_DELAY = 350;
+const FALL_SETTLE_DELAY = 220; // ms (重力で落ちきってから次の連鎖判定に入るまでの間)
 const AI_MOVE_STEP_MS = 130; // AIが1マス動くのにかける時間(見た目のため)
 const GARBAGE_DROP_CAP = 30; // 1回の着地でまとめて落とす最大おじゃま数
 
@@ -164,6 +166,14 @@ function simulateResolve(grid) {
       cellsToClear.push([r, c]);
     }));
     if (cellsToClear.length === 0) break;
+    const clearSet = new Set(cellsToClear.map(([r, c]) => `${r},${c}`));
+    cellsToClear.forEach(([r, c]) => {
+      [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]].forEach(([nr, nc]) => {
+        if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) return;
+        const key = `${nr},${nc}`;
+        if (grid[nr][nc] === 'gray' && !clearSet.has(key)) { clearSet.add(key); cellsToClear.push([nr, nc]); }
+      });
+    });
     chainCount += 1;
     if (chainCount === 1) firstGroupCount = groups.length;
     if (cellsToClear.some(([r, c]) => grid[r][c] === 'white')) whiteUsed = true;
@@ -192,15 +202,38 @@ function simulatePlacement(grid, axisColor, subColor, axisCol, orientation) {
   const holes = countHoles(g2, heights);
   return { ...res, grid: g2, maxHeight: Math.max(...heights), holes };
 }
+function computeSetupPotential(grid) {
+  // まだ消えていない色クラスタ(2〜3個の隣接)を評価し、将来の連鎖の"仕込み"を数値化する
+  const visited = Array.from({ length: SPAWN_ROW }, () => new Array(COLS).fill(false));
+  function matches(cc, gc) { return cc === gc || cc === 'white'; }
+  let potential = 0;
+  for (let r = 0; r < SPAWN_ROW; r++) for (let c = 0; c < COLS; c++) {
+    const seed = grid[r][c];
+    if (!seed || seed === 'gray' || seed === 'white' || visited[r][c]) continue;
+    const stack = [[r, c]]; visited[r][c] = true; let size = 0;
+    while (stack.length) {
+      const [cr, cc2] = stack.pop(); size++;
+      for (const [nr, nc] of [[cr + 1, cc2], [cr - 1, cc2], [cr, cc2 + 1], [cr, cc2 - 1]]) {
+        if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) continue;
+        if (visited[nr][nc]) continue;
+        if (matches(grid[nr][nc], seed)) { visited[nr][nc] = true; stack.push([nr, nc]); }
+      }
+    }
+    if (size === 3) potential += 12;
+    else if (size === 2) potential += 4;
+  }
+  return potential;
+}
 function scoreCandidate(sim, difficulty) {
-  let holePenalty = 18, heightPenalty = 3, chainWeight = 550;
-  if (difficulty === 'easy') { holePenalty = 10; heightPenalty = 2; chainWeight = 400; }
-  else if (difficulty === 'hard') { holePenalty = 35; heightPenalty = 5; chainWeight = 650; }
-  else if (difficulty === 'master') { holePenalty = 40; heightPenalty = 6; chainWeight = 700; }
+  let holePenalty = 18, heightPenalty = 3, chainWeight = 550, setupWeight = 2;
+  if (difficulty === 'easy') { holePenalty = 10; heightPenalty = 2; chainWeight = 400; setupWeight = 0; }
+  else if (difficulty === 'hard') { holePenalty = 24; heightPenalty = 3; chainWeight = 950; setupWeight = 7; }
+  else if (difficulty === 'master') { holePenalty = 20; heightPenalty = 2; chainWeight = 1150; setupWeight = 10; }
   let score = sim.chainCount * chainWeight + sim.totalCleared * 8;
   if (sim.allClear) score += 3000;
   score -= sim.holes * holePenalty;
   score -= sim.maxHeight * heightPenalty;
+  score += computeSetupPotential(sim.grid) * setupWeight;
   return score;
 }
 function decideMove(side) {
@@ -222,7 +255,7 @@ function decideMove(side) {
             }
           }
         }
-        if (bestNext > -Infinity) score += bestNext * 0.5;
+        if (bestNext > -Infinity) score += bestNext * 0.75;
       }
       candidates.push({ col, orientation, score });
     }
@@ -262,8 +295,7 @@ function buildBoardDom(gridCellsEl) {
 
 function applyBlockFace(el, color) {
   if (!color) { el.className = 'cell'; el.style.backgroundImage = ''; return; }
-  if (color === 'gray') { el.className = 'cell filled gray'; el.style.backgroundImage = ''; return; }
-  el.className = 'cell filled cube';
+  el.className = 'cell filled cube' + (color === 'gray' ? ' gray-block' : '');
   el.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
   el.style.backgroundSize = '100% 100%';
   el.style.backgroundPosition = 'center';
@@ -426,7 +458,7 @@ function startLockSequence(side, opponent) {
   }, LOCK_DELAY);
 }
 function lockPiece(side, opponent) {
-  if (!side.current) return;
+  if (!side.current || side.gameOver) return;
   side.grid[side.current.axisRow][side.current.axisCol] = side.current.axisColor;
   side.grid[side.current.subRow][side.current.subCol] = side.current.subColor;
   side.current = null;
@@ -435,12 +467,19 @@ function lockPiece(side, opponent) {
   resolveBoardAnimated(side).then((garbageAmount) => {
     if (side.gameOver) return;
     if (garbageAmount > 0) sendGarbage(side, opponent, garbageAmount);
-    dropPendingGarbage(side);
-    renderSide(side);
+    const placedGarbage = dropPendingGarbage(side);
     if (side.gameOver) return;
     side.current = spawnPiece(side, opponent);
     if (side.current && side.isAI) planAndQueueAIMove(side);
     renderSide(side);
+    placedGarbage.forEach(([r, c]) => {
+      if (r < ROWS) {
+        const el = side.cellEls[r][c];
+        el.classList.remove('garbage-fall');
+        void el.offsetWidth;
+        el.classList.add('garbage-fall');
+      }
+    });
   });
 }
 
@@ -467,6 +506,21 @@ function resolveBoardAnimated(side) {
       }));
 
       if (cellsToClear.length === 0) { renderSide(side); finish(); return; }
+
+      // お邪魔ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える
+      const clearSet = new Set(cellsToClear.map(([r, c]) => `${r},${c}`));
+      const grayToClear = [];
+      cellsToClear.forEach(([r, c]) => {
+        [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]].forEach(([nr, nc]) => {
+          if (nr < 0 || nr >= SPAWN_ROW || nc < 0 || nc >= COLS) return;
+          const key = `${nr},${nc}`;
+          if (side.grid[nr][nc] === 'gray' && !clearSet.has(key)) {
+            clearSet.add(key);
+            grayToClear.push([nr, nc]);
+          }
+        });
+      });
+      cellsToClear.push(...grayToClear);
 
       side.chainCount += 1;
       cellsToClear.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.add('clearing'); });
@@ -497,7 +551,7 @@ function resolveBoardAnimated(side) {
 
         renderSide(side);
         cellsToClear.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.remove('clearing'); });
-        step();
+        setTimeout(step, FALL_SETTLE_DELAY);
       }, 260);
     }
 
@@ -530,7 +584,7 @@ function sendGarbage(fromSide, toSide, amount) {
 }
 
 function dropPendingGarbage(side) {
-  if (side.incoming <= 0 || side.gameOver) return;
+  if (side.incoming <= 0 || side.gameOver) return [];
   const dropCount = Math.min(Math.round(side.incoming), GARBAGE_DROP_CAP);
   side.incoming -= dropCount;
   side.garbageEl.textContent = Math.ceil(side.incoming);
@@ -540,16 +594,18 @@ function dropPendingGarbage(side) {
     const j = Math.floor(Math.random() * (i + 1));
     [cols[i], cols[j]] = [cols[j], cols[i]];
   }
-  let placed = 0, ci = 0, guard = 0;
-  while (placed < dropCount && guard < dropCount * 40) {
+  const placed = [];
+  let ci = 0, guard = 0;
+  while (placed.length < dropCount && guard < dropCount * 40) {
     guard++;
     const col = cols[ci % cols.length]; ci++;
     let row = 0;
     while (row <= SPAWN_ROW && side.grid[row][col] !== null) row++;
     if (row > SPAWN_ROW) continue;
     side.grid[row][col] = 'gray';
-    placed++;
+    placed.push([row, col]);
   }
+  return placed;
 }
 
 // ----------------------------------------------------------
@@ -590,6 +646,29 @@ function endMatch(losingSide, winningSide) {
   titleEl.textContent = playerWon ? 'WIN!' : 'LOSE...';
   titleEl.className = playerWon ? 'win' : 'lose';
   document.getElementById('result-overlay').classList.add('show');
+
+  lastMatchDurationSeconds = Math.max(0, Math.round((Date.now() - matchStartTime) / 1000));
+  const rankSubmitBlock = document.getElementById('rank-submit');
+  const timeDisplayEl = document.getElementById('match-time-display');
+
+  if (playerWon) {
+    rankSubmitBlock.style.display = '';
+    timeDisplayEl.style.display = '';
+    timeDisplayEl.textContent = `クリアタイム: ${formatDuration(lastMatchDurationSeconds)}`;
+    rankNameInput.value = '';
+    rankStatusEl.textContent = '';
+    rankSubmitBtn.disabled = false;
+    rankSubmitBtn.textContent = 'ランキングに登録';
+  } else {
+    rankSubmitBlock.style.display = 'none';
+    timeDisplayEl.style.display = 'none';
+  }
+}
+
+function formatDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 // ----------------------------------------------------------
@@ -598,15 +677,27 @@ function endMatch(losingSide, winningSide) {
 let playerSide = null;
 let aiSide = null;
 let loopStarted = false;
+let matchStartTime = 0;
+let lastMatchDurationSeconds = 0;
+let lastMatchDifficulty = null;
 
-function startMatch(difficulty) {
-  matchOver = false;
+function prepareBoards(difficulty) {
   document.getElementById('result-overlay').classList.remove('show');
   document.getElementById('setup-overlay').style.display = 'none';
   document.getElementById('ai-label').textContent = `AI (${difficulty.toUpperCase()})`;
+  matchTimerEl.textContent = '0:00';
+  matchStartTime = 0;
 
   playerSide = createSide('player', false, null);
   aiSide = createSide('ai', true, difficulty);
+  renderSide(playerSide);
+  renderSide(aiSide);
+}
+
+function beginGameplay(difficulty) {
+  matchOver = false;
+  matchStartTime = Date.now();
+  lastMatchDifficulty = difficulty;
 
   playerSide.current = spawnPiece(playerSide, aiSide);
   aiSide.current = spawnPiece(aiSide, playerSide);
@@ -617,20 +708,142 @@ function startMatch(difficulty) {
   if (!loopStarted) { loopStarted = true; requestAnimationFrame(loop); }
 }
 
+// ----------------------------------------------------------
+// BGM: 難易度選択中はタイトルBGM、開始直前は無音、開始後はゲームBGM
+// ----------------------------------------------------------
+const titleBgm = document.getElementById('title-bgm');
+const matchTimerEl = document.getElementById('match-timer');
+const gameBgm = document.getElementById('game-bgm');
+const soundToggle = document.getElementById('sound-toggle');
+titleBgm.volume = 0.3;
+gameBgm.volume = 0.22;
+let activeBgm = titleBgm;
+let soundMuted = false;
+
+function updateSoundIcon() {
+  soundToggle.textContent = (!soundMuted) ? '🔊' : '🔈';
+}
+function playBgm(el) {
+  if (soundMuted) return;
+  const p = el.play();
+  if (p && p.catch) p.catch(() => {});
+}
+function tryStartTitleBgmOnLoad() {
+  titleBgm.muted = true;
+  const p = titleBgm.play();
+  if (p && p.then) {
+    p.then(() => {
+      titleBgm.muted = false;
+      updateSoundIcon();
+    }).catch(() => {
+      titleBgm.muted = false;
+      const resumeOnInteraction = () => {
+        if (activeBgm === titleBgm) playBgm(titleBgm);
+        document.removeEventListener('click', resumeOnInteraction);
+        document.removeEventListener('keydown', resumeOnInteraction);
+        document.removeEventListener('touchstart', resumeOnInteraction);
+      };
+      document.addEventListener('click', resumeOnInteraction, { once: true });
+      document.addEventListener('keydown', resumeOnInteraction, { once: true });
+      document.addEventListener('touchstart', resumeOnInteraction, { once: true });
+    });
+  }
+}
+tryStartTitleBgmOnLoad();
+updateSoundIcon();
+
+soundToggle.addEventListener('click', () => {
+  soundMuted = !soundMuted;
+  if (soundMuted) {
+    titleBgm.pause();
+    gameBgm.pause();
+  } else {
+    playBgm(activeBgm);
+  }
+  updateSoundIcon();
+});
+
+// ----------------------------------------------------------
+// 3秒カウントダウン(無音)→ゲームBGM再生→試合開始
+// ----------------------------------------------------------
+function startCountdownThenMatch(difficulty) {
+  titleBgm.pause(); // カウントダウン中は無音
+  prepareBoards(difficulty); // 前回の盤面をすぐにクリアする
+
+  const overlay = document.getElementById('countdown-overlay');
+  const numberEl = document.getElementById('countdown-number');
+  overlay.classList.add('show');
+
+  let count = 3;
+  numberEl.textContent = count;
+  numberEl.classList.remove('pulse'); void numberEl.offsetWidth; numberEl.classList.add('pulse');
+
+  const timer = setInterval(() => {
+    count -= 1;
+    if (count > 0) {
+      numberEl.textContent = count;
+      numberEl.classList.remove('pulse'); void numberEl.offsetWidth; numberEl.classList.add('pulse');
+    } else {
+      clearInterval(timer);
+      overlay.classList.remove('show');
+      beginGameplay(difficulty);
+      activeBgm = gameBgm;
+      gameBgm.currentTime = 0;
+      playBgm(gameBgm);
+      updateSoundIcon();
+    }
+  }, 1000);
+}
+
 function resetMatch(difficulty) {
-  startMatch(difficulty);
+  startCountdownThenMatch(difficulty);
 }
 
 let currentDifficulty = 'normal';
 document.querySelectorAll('.diff-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     currentDifficulty = btn.dataset.diff;
-    startMatch(currentDifficulty);
+    document.getElementById('setup-overlay').style.display = 'none';
+    startCountdownThenMatch(currentDifficulty);
   });
 });
 
-document.getElementById('result-retry').addEventListener('click', () => startMatch(currentDifficulty));
+document.getElementById('result-retry').addEventListener('click', () => startCountdownThenMatch(currentDifficulty));
 document.getElementById('result-title-btn').addEventListener('click', () => { window.location.href = 'index.html'; });
+
+// ----------------------------------------------------------
+// ランキング登録(Supabase)
+// ----------------------------------------------------------
+const rankNameInput = document.getElementById('rank-name');
+const rankSubmitBtn = document.getElementById('rank-submit-btn');
+const rankStatusEl = document.getElementById('rank-status');
+
+rankSubmitBtn.addEventListener('click', async () => {
+  const name = rankNameInput.value.trim();
+  if (!name) { rankStatusEl.textContent = 'なまえを入力してください'; return; }
+  if (!supabaseClient) { rankStatusEl.textContent = 'ランキング機能は準備中です'; return; }
+  if (!playerSide) return;
+
+  rankSubmitBtn.disabled = true;
+  rankSubmitBtn.textContent = '送信中...';
+  const { error } = await supabaseClient.from('scores').insert({
+    name: name.slice(0, 12),
+    score: playerSide.score,
+    level: playerSide.level,
+    mode: 'battle',
+    difficulty: lastMatchDifficulty,
+    duration_seconds: lastMatchDurationSeconds,
+  });
+  if (error) {
+    rankStatusEl.textContent = '登録に失敗しました';
+    rankSubmitBtn.disabled = false;
+    rankSubmitBtn.textContent = 'ランキングに登録';
+    console.error(error);
+  } else {
+    rankStatusEl.textContent = '登録しました!';
+    rankSubmitBtn.textContent = '登録済み';
+  }
+});
 
 document.addEventListener('keydown', (e) => {
   if (!playerSide || playerSide.gameOver || matchOver) return;
@@ -671,6 +884,9 @@ function loop(time) {
   if (playerSide && aiSide && !matchOver) {
     updateSide(playerSide, dt, aiSide);
     updateSide(aiSide, dt, playerSide);
+    if (matchStartTime) {
+      matchTimerEl.textContent = formatDuration(Math.floor((Date.now() - matchStartTime) / 1000));
+    }
   }
   requestAnimationFrame(loop);
 }
