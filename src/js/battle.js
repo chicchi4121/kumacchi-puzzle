@@ -819,28 +819,57 @@ const rankSubmitBtn = document.getElementById('rank-submit-btn');
 const rankStatusEl = document.getElementById('rank-status');
 
 rankSubmitBtn.addEventListener('click', async () => {
-  const name = rankNameInput.value.trim();
+  const name = rankNameInput.value.trim().slice(0, 12);
   if (!name) { rankStatusEl.textContent = 'なまえを入力してください'; return; }
   if (!supabaseClient) { rankStatusEl.textContent = 'ランキング機能は準備中です'; return; }
   if (!playerSide) return;
 
   rankSubmitBtn.disabled = true;
   rankSubmitBtn.textContent = '送信中...';
-  const { error } = await supabaseClient.from('scores').insert({
-    name: name.slice(0, 12),
+
+  const { data: existing, error: selectError } = await supabaseClient
+    .from('scores')
+    .select('id, duration_seconds')
+    .eq('mode', 'battle')
+    .eq('difficulty', lastMatchDifficulty)
+    .eq('name', name)
+    .maybeSingle();
+
+  if (selectError) {
+    rankStatusEl.textContent = '登録に失敗しました';
+    rankSubmitBtn.disabled = false;
+    rankSubmitBtn.textContent = 'ランキングに登録';
+    console.error(selectError);
+    return;
+  }
+
+  if (existing && existing.duration_seconds <= lastMatchDurationSeconds) {
+    rankStatusEl.textContent = `自己ベスト(${formatDuration(existing.duration_seconds)})を更新できませんでした`;
+    rankSubmitBtn.disabled = false;
+    rankSubmitBtn.textContent = 'ランキングに登録';
+    return;
+  }
+
+  const payload = {
+    name: name,
     score: playerSide.score,
     level: playerSide.level,
     mode: 'battle',
     difficulty: lastMatchDifficulty,
     duration_seconds: lastMatchDurationSeconds,
-  });
+  };
+
+  const { error } = existing
+    ? await supabaseClient.from('scores').update(payload).eq('id', existing.id)
+    : await supabaseClient.from('scores').insert(payload);
+
   if (error) {
     rankStatusEl.textContent = '登録に失敗しました';
     rankSubmitBtn.disabled = false;
     rankSubmitBtn.textContent = 'ランキングに登録';
     console.error(error);
   } else {
-    rankStatusEl.textContent = '登録しました!';
+    rankStatusEl.textContent = existing ? '自己ベストを更新しました!' : '登録しました!';
     rankSubmitBtn.textContent = '登録済み';
   }
 });

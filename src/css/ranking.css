@@ -74,6 +74,15 @@ h1{
   padding:6px 14px;
 }
 
+.diff-label{
+  text-align:center;
+  font-family:'Baloo 2', sans-serif;
+  font-size:0.95rem;
+  color: var(--honey);
+  margin-bottom:10px;
+  letter-spacing:1px;
+}
+
 .list-panel{
   background: rgba(0,0,0,0.25);
   border-radius:16px;

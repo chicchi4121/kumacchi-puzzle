@@ -45,4 +45,39 @@ create index if not exists scores_battle_diff_duration_idx
   on public.scores (mode, difficulty, duration_seconds asc)
   where mode = 'battle';
 
--- 更新・削除はクライアントから一切許可しない(ポリシーを作らないことで自動的に拒否されます)
+-- 同じ名前の重複を防ぐため、自己ベストの更新(UPDATE)を許可する
+-- (削除は行わず、既存の行を上書きする方式。一覧側は名前ごとの最良の1件だけを表示する)
+drop policy if exists "Anyone can update scores" on public.scores;
+create policy "Anyone can update scores"
+  on public.scores
+  for update
+  using (true)
+  with check (true);
+
+grant update on public.scores to anon, authenticated;
+
+-- 安全装置: 記録が「悪化」する更新(ソロ=スコアが下がる、AI対戦=タイムが遅くなる)を
+-- データベース側でも拒否する(クライアントのバグや不正な直接アクセスからも保護する)
+create or replace function public.prevent_score_regression()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.mode = 'solo' and new.score < old.score then
+    raise exception 'new score (%) must be higher than existing best (%)', new.score, old.score;
+  end if;
+  if new.mode = 'battle' and old.duration_seconds is not null
+     and new.duration_seconds is not null
+     and new.duration_seconds > old.duration_seconds then
+    raise exception 'new time (%) must be faster than existing best (%)', new.duration_seconds, old.duration_seconds;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_prevent_score_regression on public.scores;
+create trigger trg_prevent_score_regression
+  before update on public.scores
+  for each row execute function public.prevent_score_regression();
+
+-- 削除はクライアントから一切許可しない(ポリシーを作らないことで自動的に拒否されます)

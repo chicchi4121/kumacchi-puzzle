@@ -536,7 +536,7 @@ const rankStatusEl = document.getElementById('rank-status');
 const timeDisplayEl = document.getElementById('time-display');
 
 rankSubmitBtn.addEventListener('click', async () => {
-  const name = rankNameInput.value.trim();
+  const name = rankNameInput.value.trim().slice(0, 12);
   if (!name) {
     rankStatusEl.textContent = 'なまえを入力してください';
     return;
@@ -547,20 +547,48 @@ rankSubmitBtn.addEventListener('click', async () => {
   }
   rankSubmitBtn.disabled = true;
   rankSubmitBtn.textContent = '送信中...';
-  const { error } = await supabaseClient.from('scores').insert({
-    name: name.slice(0, 12),
+
+  const { data: existing, error: selectError } = await supabaseClient
+    .from('scores')
+    .select('id, score')
+    .eq('mode', 'solo')
+    .eq('name', name)
+    .maybeSingle();
+
+  if (selectError) {
+    rankStatusEl.textContent = '登録に失敗しました';
+    rankSubmitBtn.disabled = false;
+    rankSubmitBtn.textContent = 'ランキングに登録';
+    console.error(selectError);
+    return;
+  }
+
+  if (existing && existing.score >= score) {
+    rankStatusEl.textContent = `自己ベスト(${existing.score}点)を更新できませんでした`;
+    rankSubmitBtn.disabled = false;
+    rankSubmitBtn.textContent = 'ランキングに登録';
+    return;
+  }
+
+  const payload = {
+    name: name,
     score: score,
     level: level,
     mode: 'solo',
     duration_seconds: lastPlayDurationSeconds,
-  });
+  };
+
+  const { error } = existing
+    ? await supabaseClient.from('scores').update(payload).eq('id', existing.id)
+    : await supabaseClient.from('scores').insert(payload);
+
   if (error) {
     rankStatusEl.textContent = '登録に失敗しました';
     rankSubmitBtn.disabled = false;
     rankSubmitBtn.textContent = 'ランキングに登録';
     console.error(error);
   } else {
-    rankStatusEl.textContent = '登録しました!';
+    rankStatusEl.textContent = existing ? '自己ベストを更新しました!' : '登録しました!';
     rankSubmitBtn.textContent = '登録済み';
   }
 });
