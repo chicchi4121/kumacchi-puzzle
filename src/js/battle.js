@@ -28,13 +28,37 @@ const FALL_SETTLE_DELAY = 220; // ms (重力で落ちきってから次の連鎖
 const AI_MOVE_STEP_MS = 130; // AIが1マス動くのにかける時間(見た目のため)
 const GARBAGE_DROP_CAP = 30; // 1回の着地でまとめて落とす最大おじゃま数
 
-function colorsForLevel(lv) {
+function colorsForLevel(lv, forceAllColors) {
+  if (forceAllColors) return COLORS;
   if (lv >= 20) return COLORS;
   if (lv >= 10) return COLORS.slice(0, 5);
   return COLORS.slice(0, 4);
 }
 function getRequiredClears(lv) {
   return Math.round(50 * Math.pow(1.1, lv - 1));
+}
+
+// ----------------------------------------------------------
+// 得点計算(新方式)
+// 基本: 1個10点。同時に複数の色グループが消えた場合はボーナステーブルを適用。
+// 連鎖ボーナスは加算式で、連鎖するごとに倍になる(2連鎖+40, 3連鎖+80, 4連鎖+160...)
+// ----------------------------------------------------------
+const MULTI_COLOR_BONUS = { 2: 160, 3: 320, 4: 640, 5: 800 };
+function computeClearScore(groupSizes) {
+  const n = groupSizes.length;
+  if (n === 0) return 0;
+  if (n === 1) {
+    const size = groupSizes[0];
+    let s = size * 10;
+    if (size >= 10) s += 500; // 同色10個以上の大量同時消しボーナス
+    return s;
+  }
+  if (MULTI_COLOR_BONUS[n] !== undefined) return MULTI_COLOR_BONUS[n];
+  return 40 * Math.pow(2, n); // 6色以上の同時消去は事実上発生しないための概算値
+}
+function computeChainBonus(chainCount) {
+  if (chainCount < 2) return 0;
+  return 40 * Math.pow(2, chainCount - 2);
 }
 function getFallInterval(lv) {
   const clampedLv = Math.min(Math.max(lv, 1), 50);
@@ -335,7 +359,8 @@ function createSide(id, isAI, difficulty) {
 }
 
 function randomColorFor(side) {
-  const pool = colorsForLevel(side.level);
+  const forceAll = matchDifficulty === 'hard' || matchDifficulty === 'master';
+  const pool = colorsForLevel(side.level, forceAll);
   return pool[Math.floor(Math.random() * pool.length)];
 }
 function fillQueue(side) {
@@ -490,24 +515,25 @@ function resolveBoardAnimated(side) {
   return new Promise((resolve) => {
     side.chainCount = 0;
     let totalGarbage = 0;
-    let whiteUsedAnywhere = false;
 
     function step() {
       const groups = findGroups(side.grid);
       if (groups.length === 0) { renderSide(side); finish(); return; }
 
-      const cellsToClear = [];
-      groups.forEach(g => g.forEach(([r, c]) => {
+      // グループごとに実際に消えるセルを計算(白は支えがない場合はそのグループから除外)
+      const perGroupCleared = groups.map(g => g.filter(([r, c]) => {
         if (side.grid[r][c] === 'white') {
           const hasTop = r + 1 < SPAWN_ROW && side.grid[r + 1][c] !== null;
-          if (!hasTop) return;
+          return hasTop;
         }
-        cellsToClear.push([r, c]);
+        return true;
       }));
+      const cellsToClear = [];
+      perGroupCleared.forEach(g => cellsToClear.push(...g));
 
       if (cellsToClear.length === 0) { renderSide(side); finish(); return; }
 
-      // お邪魔ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える
+      // お邪魔ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える(得点対象外)
       const clearSet = new Set(cellsToClear.map(([r, c]) => `${r},${c}`));
       const grayToClear = [];
       cellsToClear.forEach(([r, c]) => {
@@ -520,20 +546,23 @@ function resolveBoardAnimated(side) {
           }
         });
       });
-      cellsToClear.push(...grayToClear);
+      const allClearingCells = [...cellsToClear, ...grayToClear];
 
       side.chainCount += 1;
-      cellsToClear.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.add('clearing'); });
+      allClearingCells.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.add('clearing'); });
 
-      const totalCells = cellsToClear.length;
-      side.score += totalCells * 10 * side.chainCount;
-      if (side.chainCount >= 6) side.score += 3000;
+      // 得点計算(新方式): グループごとのサイズ→同時消去ボーナス表 + 連鎖ボーナス(加算・倍々)
+      const groupSizes = perGroupCleared.map(g => g.length).filter(sz => sz > 0);
+      const clearScore = computeClearScore(groupSizes);
+      const chainBonus = computeChainBonus(side.chainCount);
+      side.score += clearScore + chainBonus;
       side.scoreEl.textContent = side.score;
 
-      if (cellsToClear.some(([r, c]) => side.grid[r][c] === 'white')) whiteUsedAnywhere = true;
+      const whiteClearedThisStep = cellsToClear.some(([r, c]) => side.grid[r][c] === 'white');
+      if (whiteClearedThisStep) totalGarbage += 12; // 白ブロック消去でお邪魔2段(6列×2段)ぶんを追加
       totalGarbage += getGarbageSendAmount(side.chainCount) + getSimultaneousBonus(groups.length);
 
-      side.clearedThisLevel += totalCells;
+      side.clearedThisLevel += allClearingCells.length;
       while (side.clearedThisLevel >= getRequiredClears(side.level)) {
         side.clearedThisLevel -= getRequiredClears(side.level);
         side.level += 1;
@@ -543,20 +572,23 @@ function resolveBoardAnimated(side) {
       showChainToast(side, side.chainCount);
 
       setTimeout(() => {
-        cellsToClear.forEach(([r, c]) => { side.grid[r][c] = null; });
+        allClearingCells.forEach(([r, c]) => { side.grid[r][c] = null; });
         applyGravity(side.grid);
 
         const isAllClear = side.grid.slice(0, SPAWN_ROW).every(row => row.every(cell => cell === null));
-        if (isAllClear) { totalGarbage += 30; side.score += 5000; side.scoreEl.textContent = side.score; }
+        if (isAllClear) {
+          totalGarbage += getGarbageSendAmount(5); // 全消しは5連鎖相当のお邪魔を送る
+          side.score += 5000;
+          side.scoreEl.textContent = side.score;
+        }
 
         renderSide(side);
-        cellsToClear.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.remove('clearing'); });
+        allClearingCells.forEach(([r, c]) => { if (r < ROWS) side.cellEls[r][c].classList.remove('clearing'); });
         setTimeout(step, FALL_SETTLE_DELAY);
       }, 260);
     }
 
     function finish() {
-      if (whiteUsedAnywhere) totalGarbage = Math.round(totalGarbage * 1.1);
       resolve(totalGarbage);
     }
     step();
@@ -678,6 +710,7 @@ let playerSide = null;
 let aiSide = null;
 let loopStarted = false;
 let matchStartTime = 0;
+let matchDifficulty = null;
 let lastMatchDurationSeconds = 0;
 let lastMatchDifficulty = null;
 
@@ -687,6 +720,7 @@ function prepareBoards(difficulty) {
   document.getElementById('ai-label').textContent = `AI (${difficulty.toUpperCase()})`;
   matchTimerEl.textContent = '0:00';
   matchStartTime = 0;
+  matchDifficulty = difficulty;
 
   playerSide = createSide('player', false, null);
   aiSide = createSide('ai', true, difficulty);

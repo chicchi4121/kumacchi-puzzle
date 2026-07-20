@@ -44,6 +44,29 @@ function getRequiredClears(lv) {
   return Math.round(50 * Math.pow(1.1, lv - 1));
 }
 
+// ----------------------------------------------------------
+// 得点計算(新方式)
+// 基本: 1個10点。同時に複数の色グループが消えた場合はボーナステーブルを適用。
+// 連鎖ボーナスは加算式で、連鎖するごとに倍になる(2連鎖+40, 3連鎖+80, 4連鎖+160...)
+// ----------------------------------------------------------
+const MULTI_COLOR_BONUS = { 2: 160, 3: 320, 4: 640, 5: 800 };
+function computeClearScore(groupSizes) {
+  const n = groupSizes.length;
+  if (n === 0) return 0;
+  if (n === 1) {
+    const size = groupSizes[0];
+    let s = size * 10;
+    if (size >= 10) s += 500; // 同色10個以上の大量同時消しボーナス
+    return s;
+  }
+  if (MULTI_COLOR_BONUS[n] !== undefined) return MULTI_COLOR_BONUS[n];
+  return 40 * Math.pow(2, n); // 6色以上の同時消去は事実上発生しないための概算値
+}
+function computeChainBonus(chainCount) {
+  if (chainCount < 2) return 0;
+  return 40 * Math.pow(2, chainCount - 2);
+}
+
 // grid[row][col] = null または色文字列。row 0が最下段。
 let grid = [];
 for (let r = 0; r <= SPAWN_ROW; r++) {
@@ -385,16 +408,15 @@ function resolveBoard() {
 
       // 白ブロックは「上に乗っているブロックがある」場合のみ実際に消える。
       // 支えがない白セルはグループに含まれていても盤面に残す。
+      const perGroupCleared = groups.map(g => g.filter(([r, c]) => {
+        if (grid[r][c] === 'white') {
+          const hasBlockOnTop = r + 1 < SPAWN_ROW && grid[r + 1][c] !== null;
+          return hasBlockOnTop;
+        }
+        return true;
+      }));
       const cellsToClear = [];
-      groups.forEach(g => {
-        g.forEach(([r, c]) => {
-          if (grid[r][c] === 'white') {
-            const hasBlockOnTop = r + 1 < SPAWN_ROW && grid[r + 1][c] !== null;
-            if (!hasBlockOnTop) return; // 白は残す
-          }
-          cellsToClear.push([r, c]);
-        });
-      });
+      perGroupCleared.forEach(g => cellsToClear.push(...g));
 
       if (cellsToClear.length === 0) {
         // 消せるセルが1つもなければこれ以上は連鎖しない
@@ -403,7 +425,7 @@ function resolveBoard() {
         return;
       }
 
-      // お邪魔ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える
+      // お邪魔ブロックは、隣接する色ブロックが消える時に巻き込まれて一緒に消える(得点対象外)
       const clearSet = new Set(cellsToClear.map(([r, c]) => `${r},${c}`));
       const grayToClear = [];
       cellsToClear.forEach(([r, c]) => {
@@ -416,23 +438,23 @@ function resolveBoard() {
           }
         });
       });
-      cellsToClear.push(...grayToClear);
+      const allClearingCells = [...cellsToClear, ...grayToClear];
 
       chainCount += 1;
 
-      cellsToClear.forEach(([r, c]) => {
+      allClearingCells.forEach(([r, c]) => {
         if (r < ROWS) cellEls[r][c].classList.add('clearing');
       });
 
-      const totalCells = cellsToClear.length;
-      totalCleared += totalCells;
-      score += totalCells * 10 * chainCount;
-      if (chainCount >= 6) {
-        score += 3000; // 6連鎖以降のボーナス
-      }
+      // 得点計算(新方式): グループサイズ→同時消去ボーナス表 + 連鎖ボーナス(加算・倍々)
+      const groupSizes = perGroupCleared.map(g => g.length).filter(sz => sz > 0);
+      const clearScore = computeClearScore(groupSizes);
+      const chainBonus = computeChainBonus(chainCount);
+      totalCleared += allClearingCells.length;
+      score += clearScore + chainBonus;
       scoreEl.textContent = score;
 
-      clearedThisLevel += totalCells;
+      clearedThisLevel += allClearingCells.length;
       while (clearedThisLevel >= getRequiredClears(level)) {
         clearedThisLevel -= getRequiredClears(level);
         level += 1;
@@ -442,7 +464,7 @@ function resolveBoard() {
       showChainToast(chainCount);
 
       setTimeout(() => {
-        cellsToClear.forEach(([r, c]) => {
+        allClearingCells.forEach(([r, c]) => {
           grid[r][c] = null;
         });
         applyGravity();
@@ -456,7 +478,7 @@ function resolveBoard() {
         }
 
         render();
-        cellsToClear.forEach(([r, c]) => {
+        allClearingCells.forEach(([r, c]) => {
           if (r < ROWS) cellEls[r][c].classList.remove('clearing');
         });
         // ブロックが落ちきるまで少し待ってから次の連鎖判定を行う
