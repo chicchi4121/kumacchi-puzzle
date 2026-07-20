@@ -927,6 +927,27 @@ document.addEventListener('keyup', (e) => {
   if (playerSide && e.key === 'ArrowDown') playerSide.softDropping = false;
 });
 
+// タッチ操作パッド(スマホ用) - プレイヤー側のみ操作可能
+function bindTouchButton(id, onPress, onRelease) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const canAct = () => playerSide && !playerSide.gameOver && !matchOver;
+  const press = (e) => { e.preventDefault(); if (canAct()) onPress(); };
+  const release = (e) => { e.preventDefault(); if (onRelease) onRelease(); };
+  el.addEventListener('touchstart', press, { passive: false });
+  el.addEventListener('mousedown', press);
+  if (onRelease) {
+    el.addEventListener('touchend', release, { passive: false });
+    el.addEventListener('mouseup', release);
+    el.addEventListener('mouseleave', release);
+  }
+}
+bindTouchButton('touch-left', () => tryMove(playerSide, -1));
+bindTouchButton('touch-right', () => tryMove(playerSide, 1));
+bindTouchButton('touch-rotate-l', () => tryRotate(playerSide, 'ccw'));
+bindTouchButton('touch-rotate-r', () => tryRotate(playerSide, 'cw'));
+bindTouchButton('touch-down', () => { playerSide.softDropping = true; }, () => { if (playerSide) playerSide.softDropping = false; });
+
 let lastTime = 0;
 function updateSide(side, dt, opponent) {
   if (side.gameOver || !side.current) return;

@@ -740,6 +740,26 @@ document.addEventListener('keyup', (e) => {
   if (e.key === 'ArrowDown') softDropping = false;
 });
 
+// タッチ操作パッド(スマホ用)
+function bindTouchButton(id, onPress, onRelease) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const press = (e) => { e.preventDefault(); if (!gameOver) onPress(); };
+  const release = (e) => { e.preventDefault(); if (onRelease) onRelease(); };
+  el.addEventListener('touchstart', press, { passive: false });
+  el.addEventListener('mousedown', press);
+  if (onRelease) {
+    el.addEventListener('touchend', release, { passive: false });
+    el.addEventListener('mouseup', release);
+    el.addEventListener('mouseleave', release);
+  }
+}
+bindTouchButton('touch-left', () => tryMove(-1));
+bindTouchButton('touch-right', () => tryMove(1));
+bindTouchButton('touch-rotate-l', () => tryRotate('ccw'));
+bindTouchButton('touch-rotate-r', () => tryRotate('cw'));
+bindTouchButton('touch-down', () => { softDropping = true; }, () => { softDropping = false; });
+
 // ----------------------------------------------------------
 // メインループ
 // ----------------------------------------------------------

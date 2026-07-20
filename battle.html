@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>くまっちパズル - AI対戦</title>
 <link rel="stylesheet" href="src/css/battle.css">
 </head>
@@ -39,6 +39,13 @@
       </div>
     </div>
     <div class="controls-hint">← → 移動　Z / X 回転　↓ 高速落下</div>
+    <div class="touch-controls" id="touch-controls">
+      <button class="touch-btn" id="touch-left" aria-label="左移動">◀</button>
+      <button class="touch-btn" id="touch-rotate-l" aria-label="左回転">↺</button>
+      <button class="touch-btn" id="touch-down" aria-label="高速落下">▼</button>
+      <button class="touch-btn" id="touch-rotate-r" aria-label="右回転">↻</button>
+      <button class="touch-btn" id="touch-right" aria-label="右移動">▶</button>
+    </div>
   </div>
 
   <div class="side-panel">
