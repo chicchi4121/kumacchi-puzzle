@@ -103,24 +103,24 @@ html,body{
 }
 
 @media (hover: none) and (pointer: coarse) and (orientation: portrait){
-  :root{ --cell: min(52px, calc((100vw - 100px) / 6), calc((100vh - 230px) / 12)); }
+  :root{ --cell: min(58px, calc((100vw - 100px) / 6), calc((100vh - 210px) / 12)); }
 
   .wrap{
     display:grid;
     grid-template-columns: auto auto;
     grid-template-rows: auto auto;
     grid-template-areas:
-      "score score"
-      "next  board";
+      "board next"
+      "score score";
     justify-content:center;
     align-items:start;
     column-gap:8px;
     row-gap:8px;
     padding:38px 8px 4px;
   }
-  .score-panel{ grid-area: score; }
-  .next-panel{ grid-area: next; align-self:center; }
   .board-panel{ grid-area: board; padding:10px; }
+  .next-panel{ grid-area: next; align-self:center; }
+  .score-panel{ grid-area: score; }
 
   .score-panel{
     flex-direction:row;
@@ -273,11 +273,11 @@ html,body{
 }
 
 .cell.garbage-fall{
-  animation: garbage-fall-in 0.4s cubic-bezier(.2,.7,.3,1) both;
+  animation: garbage-fall-in 0.9s cubic-bezier(.55,.06,.68,.19) both;
 }
 @keyframes garbage-fall-in{
   0%{ transform: translateY(-360px); opacity:0.6; }
-  80%{ transform: translateY(8px); opacity:1; }
+  85%{ transform: translateY(8px); opacity:1; }
   100%{ transform: translateY(0); opacity:1; }
 }
 

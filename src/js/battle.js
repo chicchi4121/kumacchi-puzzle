@@ -657,11 +657,27 @@ function dropPendingGarbage(side) {
 // 描画
 // ----------------------------------------------------------
 function renderSide(side) {
-  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) applyBlockFace(side.cellEls[r][c], side.grid[r][c]);
-  if (side.current) {
-    if (side.current.axisRow < ROWS) applyBlockFace(side.cellEls[side.current.axisRow][side.current.axisCol], side.current.axisColor);
-    if (side.current.subRow < ROWS) applyBlockFace(side.cellEls[side.current.subRow][side.current.subCol], side.current.subColor);
+  if (!side.lastRenderedGrid) {
+    side.lastRenderedGrid = [];
+    for (let r = 0; r < ROWS; r++) side.lastRenderedGrid.push(new Array(COLS).fill(undefined));
   }
+
+  const display = [];
+  for (let r = 0; r < ROWS; r++) display.push(side.grid[r].slice(0, COLS));
+  if (side.current) {
+    if (side.current.axisRow < ROWS) display[side.current.axisRow][side.current.axisCol] = side.current.axisColor;
+    if (side.current.subRow < ROWS) display[side.current.subRow][side.current.subCol] = side.current.subColor;
+  }
+
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (display[r][c] !== side.lastRenderedGrid[r][c]) {
+        applyBlockFace(side.cellEls[r][c], display[r][c]);
+        side.lastRenderedGrid[r][c] = display[r][c];
+      }
+    }
+  }
+
   side.nextBoxEl.innerHTML = '';
   const next = side.queue[0];
   if (next) {

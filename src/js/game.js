@@ -688,22 +688,31 @@ function applyBlockFace(el, color) {
 // ----------------------------------------------------------
 // 描画
 // ----------------------------------------------------------
+let lastRenderedGrid = null;
 function render() {
-  // 盤面(固定済みブロック)
+  if (!lastRenderedGrid) {
+    lastRenderedGrid = [];
+    for (let r = 0; r < ROWS; r++) lastRenderedGrid.push(new Array(COLS).fill(undefined));
+  }
+
+  // 盤面 + 落下中ピースを合成した「今表示すべき色」を作る
+  const display = [];
+  for (let r = 0; r < ROWS; r++) display.push(grid[r].slice(0, COLS));
+  if (current) {
+    if (current.axisRow < ROWS) display[current.axisRow][current.axisCol] = current.axisColor;
+    if (current.subRow < ROWS) display[current.subRow][current.subCol] = current.subColor;
+  }
+
+  // 前回描画時と変わったセルだけ更新する(毎回全セルを描き直すと点滅の原因になるため)
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      applyBlockFace(cellEls[r][c], grid[r][c]);
+      if (display[r][c] !== lastRenderedGrid[r][c]) {
+        applyBlockFace(cellEls[r][c], display[r][c]);
+        lastRenderedGrid[r][c] = display[r][c];
+      }
     }
   }
-  // 落下中ピースを上書き描画
-  if (current) {
-    if (current.axisRow < ROWS) {
-      applyBlockFace(cellEls[current.axisRow][current.axisCol], current.axisColor);
-    }
-    if (current.subRow < ROWS) {
-      applyBlockFace(cellEls[current.subRow][current.subCol], current.subColor);
-    }
-  }
+
   // ネクスト表示
   queue.slice(0, 2).forEach((p, i) => {
     const box = nextBoxes[i];

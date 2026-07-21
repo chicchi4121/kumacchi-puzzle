@@ -234,11 +234,11 @@ html,body{
 }
 
 .cell.garbage-fall{
-  animation: garbage-fall-in 0.4s cubic-bezier(.2,.7,.3,1) both;
+  animation: garbage-fall-in 0.9s cubic-bezier(.55,.06,.68,.19) both;
 }
 @keyframes garbage-fall-in{
   0%{ transform: translateY(-300px); opacity:0.6; }
-  80%{ transform: translateY(6px); opacity:1; }
+  85%{ transform: translateY(6px); opacity:1; }
   100%{ transform: translateY(0); opacity:1; }
 }
 
