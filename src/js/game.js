@@ -689,6 +689,7 @@ function applyBlockFace(el, color) {
 // 描画
 // ----------------------------------------------------------
 let lastRenderedGrid = null;
+let lastRenderedNextKey = null;
 function render() {
   if (!lastRenderedGrid) {
     lastRenderedGrid = [];
@@ -714,19 +715,23 @@ function render() {
   }
 
   // ネクスト表示
-  queue.slice(0, 2).forEach((p, i) => {
-    const box = nextBoxes[i];
-    box.innerHTML = '';
-    [p.axisColor, p.subColor].forEach(color => {
-      const d = document.createElement('div');
-      d.className = 'next-cell cube';
-      d.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
-      d.style.backgroundSize = '100% 100%';
-      d.style.backgroundPosition = 'center';
-      d.style.backgroundRepeat = 'no-repeat';
-      box.appendChild(d);
+  const nextKey = queue.slice(0, 2).map(p => `${p.axisColor},${p.subColor}`).join('|');
+  if (lastRenderedNextKey !== nextKey) {
+    lastRenderedNextKey = nextKey;
+    queue.slice(0, 2).forEach((p, i) => {
+      const box = nextBoxes[i];
+      box.innerHTML = '';
+      [p.axisColor, p.subColor].forEach(color => {
+        const d = document.createElement('div');
+        d.className = 'next-cell cube';
+        d.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
+        d.style.backgroundSize = '100% 100%';
+        d.style.backgroundPosition = 'center';
+        d.style.backgroundRepeat = 'no-repeat';
+        box.appendChild(d);
+      });
     });
-  });
+  }
 }
 
 // ----------------------------------------------------------

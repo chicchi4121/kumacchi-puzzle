@@ -32,8 +32,18 @@ const FALL_INTERVAL_MIN = 100;
 const FALL_INTERVAL_SOFT = 45;
 const LOCK_DELAY = 350;
 const FALL_SETTLE_DELAY = 220; // ms (重力で落ちきってから次の連鎖判定に入るまでの間)
-const AI_MOVE_STEP_MS = 130; // AIが1マス動くのにかける時間(見た目のため)
+const AI_MOVE_STEP_MS = 130; // AIが1マス動くのにかける時間(見た目のため。難易度別の値はgetAIMoveStepMsを参照)
+function getAIMoveStepMs(difficulty) {
+  switch (difficulty) {
+    case 'easy': return 260;
+    case 'normal': return 190;
+    case 'hard': return 120;
+    case 'master': return 90;
+    default: return AI_MOVE_STEP_MS;
+  }
+}
 const GARBAGE_DROP_CAP = 30; // 1回の着地でまとめて落とす最大おじゃま数
+const GARBAGE_FALL_ANIM_MS = 950; // お邪魔の落下演出(CSS側は0.9秒)が終わるまでの待ち時間
 
 function colorsForLevel(lv, forceAllColors) {
   if (forceAllColors) return COLORS;
@@ -79,7 +89,7 @@ function getFallInterval(lv) {
   return Math.max(interval, 30);
 }
 function getGarbageSendAmount(chain) {
-  const table = [0, 0, 2, 6, 12, 20, 30, 42, 56, 72, 90];
+  const table = [0, 1, 2, 6, 12, 20, 30, 42, 56, 72, 90];
   if (chain <= 10) return table[chain] || 0;
   return 90 + (chain - 10) * 18;
 }
@@ -510,17 +520,29 @@ function lockPiece(side, opponent) {
     if (garbageAmount > 0) sendGarbage(side, opponent, garbageAmount);
     const placedGarbage = dropPendingGarbage(side);
     if (side.gameOver) return;
-    side.current = spawnPiece(side, opponent);
-    if (side.current && side.isAI) planAndQueueAIMove(side);
-    renderSide(side);
-    placedGarbage.forEach(([r, c]) => {
-      if (r < ROWS) {
-        const el = side.cellEls[r][c];
-        el.classList.remove('garbage-fall');
-        void el.offsetWidth;
-        el.classList.add('garbage-fall');
-      }
-    });
+
+    if (placedGarbage.length > 0) {
+      renderSide(side);
+      placedGarbage.forEach(([r, c]) => {
+        if (r < ROWS) {
+          const el = side.cellEls[r][c];
+          el.classList.remove('garbage-fall');
+          void el.offsetWidth;
+          el.classList.add('garbage-fall');
+        }
+      });
+      // お邪魔が落ちきる演出が終わるまで待ってから次のピースを出す
+      setTimeout(() => {
+        if (side.gameOver) return;
+        side.current = spawnPiece(side, opponent);
+        if (side.current && side.isAI) planAndQueueAIMove(side);
+        renderSide(side);
+      }, GARBAGE_FALL_ANIM_MS);
+    } else {
+      side.current = spawnPiece(side, opponent);
+      if (side.current && side.isAI) planAndQueueAIMove(side);
+      renderSide(side);
+    }
   });
 }
 
@@ -678,18 +700,22 @@ function renderSide(side) {
     }
   }
 
-  side.nextBoxEl.innerHTML = '';
   const next = side.queue[0];
-  if (next) {
-    [next.axisColor, next.subColor].forEach(color => {
-      const d = document.createElement('div');
-      d.className = 'next-mini-cell';
-      d.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
-      d.style.backgroundSize = '100% 100%';
-      d.style.backgroundPosition = 'center';
-      d.style.backgroundRepeat = 'no-repeat';
-      side.nextBoxEl.appendChild(d);
-    });
+  const nextKey = next ? `${next.axisColor},${next.subColor}` : '';
+  if (side.lastRenderedNextKey !== nextKey) {
+    side.lastRenderedNextKey = nextKey;
+    side.nextBoxEl.innerHTML = '';
+    if (next) {
+      [next.axisColor, next.subColor].forEach(color => {
+        const d = document.createElement('div');
+        d.className = 'next-mini-cell';
+        d.style.backgroundImage = `url("${BLOCK_IMAGE_PATHS[color]}")`;
+        d.style.backgroundSize = '100% 100%';
+        d.style.backgroundPosition = 'center';
+        d.style.backgroundRepeat = 'no-repeat';
+        side.nextBoxEl.appendChild(d);
+      });
+    }
   }
 }
 
@@ -1011,7 +1037,7 @@ function updateSide(side, dt, opponent) {
   if (side.gameOver || !side.current) return;
   if (side.isAI && side.aiPlan) {
     side.aiPlan.moveTimer += dt;
-    if (side.aiPlan.moveTimer >= AI_MOVE_STEP_MS) {
+    if (side.aiPlan.moveTimer >= getAIMoveStepMs(side.difficulty)) {
       side.aiPlan.moveTimer = 0;
       if (side.aiPlan.movesLeft > 0 && side.aiPlan.dir !== 0) {
         tryMove(side, side.aiPlan.dir);

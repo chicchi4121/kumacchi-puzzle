@@ -111,7 +111,7 @@ html,body{
     grid-template-rows: auto auto;
     grid-template-areas:
       "board next"
-      "score score";
+      "board score";
     justify-content:center;
     align-items:start;
     column-gap:8px;
@@ -119,21 +119,11 @@ html,body{
     padding:38px 8px 4px;
   }
   .board-panel{ grid-area: board; padding:10px; }
-  .next-panel{ grid-area: next; align-self:center; }
-  .score-panel{ grid-area: score; }
+  .next-panel{ grid-area: next; width:auto; padding:8px; }
+  .score-panel{ grid-area: score; width:auto; padding:8px; }
 
-  .score-panel{
-    flex-direction:row;
-    flex-wrap:wrap;
-    justify-content:center;
-    gap:8px;
-    width:auto;
-    max-width:none;
-    padding:8px;
-  }
-  .score-panel .stat{ margin-top:0 !important; padding:6px 10px; }
-  .next-panel{ width:auto; padding:8px; }
-  .next-panel .next-box{ margin-top:0 !important; }
+  .next-panel .next-box{ margin-top:6px !important; }
+  .score-panel .stat{ padding:6px 10px; }
   .side h2{ font-size:0.75rem; margin-bottom:2px; }
   .stat .label{ font-size:0.6rem; }
   .stat .value{ font-size:1.05rem; }
